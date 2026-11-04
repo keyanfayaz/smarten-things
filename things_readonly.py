@@ -11,11 +11,19 @@ import plistlib
 import re
 import subprocess
 import sys
+from datetime import date, datetime
+import selectors
+import time
+import xml.etree.ElementTree as ET
 
 BUNDLE_ID = "com.culturedcode.ThingsMac"
 APP = Path("/Applications/Things3.app")
 SCRIPT = Path(__file__).resolve().parent / "src" / "read.applescript"
-LIST_IDS = {"inbox": "TMInboxListSource", "today": "TMTodayListSource"}
+ITEM_SCRIPT = Path(__file__).resolve().parent / "src" / "read_item.applescript"
+LIST_IDS = {"inbox": "TMInboxListSource", "today": "TMTodayListSource", "upcoming": "TMCalendarListSource"}
+MAX_OUTPUT = 1024 * 1024
+METADATA_FIELDS = frozenset({"project", "scheduled_date", "deadline", "modified_at"})
+UNSUPPORTED_FIELDS = ["priority", "progress_history", "when_date", "recurrence"]
 FIELDS = frozenset({
     "schema_version", "kind", "container_id", "container_name", "app_version",
     "offset", "limit", "total_count", "returned_count", "next_offset",
@@ -52,6 +60,7 @@ def arguments(argv=None):
     target.add_argument("--projects", action="store_true", help="Page open project summaries")
     target.add_argument("--doctor", action="store_true", help="Check prerequisites and discovery without Apple Events or task reads")
     parser.add_argument("--config", type=Path, metavar="INI", help="Explicit machine-local settings file; no implicit config lookup")
+    parser.add_argument("--metadata", action="store_true", help="Schema 2: public project, activation, due and modification fields")
     parser.add_argument("--offset", type=bounded_int(0, 1000000), default=0)
     parser.add_argument("--limit", type=bounded_int(1, 50), default=None, help="1..50; overrides configured default (otherwise 30)")
     result = parser.parse_args(argv)
@@ -95,14 +104,17 @@ def target_for(args):
     return "project", args.project
 
 
-def validate_page(data, kind, container_id, offset, limit):
+def validate_page(data, kind, container_id, offset, limit, metadata=False):
     """Reject unknown fields and inconsistent pagination; never echo input."""
     def require(condition):
         if not condition:
             raise AdapterError("Invalid adapter response; output discarded")
 
-    require(type(data) is dict and set(data) == FIELDS)
-    require(type(data["schema_version"]) is int and data["schema_version"] == 1)
+    fields = FIELDS | {"source", "unsupported_fields"} if metadata else FIELDS
+    require(type(data) is dict and set(data) == fields)
+    require(type(data["schema_version"]) is int and data["schema_version"] == (2 if metadata else 1))
+    if metadata:
+        require(data["source"] == "things" and data["unsupported_fields"] == UNSUPPORTED_FIELDS)
     require(data["kind"] == kind and data["container_id"] == container_id)
     require(type(data["container_name"]) is str and type(data["app_version"]) is str)
     for key in ("offset", "limit", "total_count", "returned_count"):
@@ -113,9 +125,27 @@ def validate_page(data, kind, container_id, offset, limit):
     require(len(data["items"]) == data["returned_count"] == expected)
     seen = set()
     for row in data["items"]:
-        require(type(row) is dict and set(row) == ITEM_FIELDS)
-        require(type(row["id"]) is str and bool(row["id"]))
-        require(type(row["title"]) is str and row["status"] == "open")
+        require(type(row) is dict and set(row) == (ITEM_FIELDS | METADATA_FIELDS if metadata else ITEM_FIELDS))
+        require(type(row["id"]) is str and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", row["id"]) is not None)
+        require(type(row["title"]) is str and len(row["title"]) <= 8192 and row["status"] == "open")
+        if metadata:
+            project = row["project"]
+            require(project is None or (type(project) is dict and set(project) == {"id", "title"}
+                    and type(project["id"]) is str and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", project["id"]) is not None
+                    and type(project["title"]) is str and len(project["title"]) <= 8192))
+            for key in ("scheduled_date", "deadline", "modified_at"):
+                value = row[key]
+                if value is not None:
+                    require(type(value) is str)
+                    try:
+                        if key == "modified_at":
+                            require(re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", value) is not None)
+                            datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+                        else:
+                            require(re.fullmatch(r"\d{4}-\d\d-\d\d", value) is not None)
+                            date.fromisoformat(value)
+                    except ValueError:
+                        require(False)
         require(row["id"] not in seen)
         seen.add(row["id"])
     next_offset = offset + expected
@@ -124,6 +154,114 @@ def validate_page(data, kind, container_id, offset, limit):
     require((type(data["next_offset"]) is int and data["next_offset"] == next_offset)
             if more else data["next_offset"] is None)
     return data
+
+
+def capabilities(path=None):
+    """Inspect only the installed public dictionary; never request task properties."""
+    path = path or APP / "Contents/Resources/Things.sdef"
+    required = {"id": "text", "name": "text", "status": "status", "project": "project",
+                "activation date": "date", "due date": "date", "modification date": "date"}
+    try:
+        root = ET.parse(path).getroot()
+        todo = root.find(".//class[@name='to do']")
+        if todo is None:
+            raise ValueError
+        props = {p.get("name"): p.get("type") for p in todo.findall("property") if p.get("hidden") != "yes"}
+        if any(props.get(name) != value for name, value in required.items()):
+            raise ValueError
+        project = root.find(".//class[@name='project']")
+        if project is None or project.get("inherits") != "to do":
+            raise ValueError
+    except (OSError, ValueError, ET.ParseError):
+        raise AdapterError("Installed public scripting dictionary lacks required metadata; no read performed") from None
+    return {"metadata_supported": True, "unsupported_fields": UNSUPPORTED_FIELDS,
+            "scheduled_date_semantics": "activation date, not the general Things When date",
+            "upcoming": "runtime list lookup; unsupported if Things cannot resolve it"}
+
+
+def validate_item(data, kind, item_id):
+    """Validate one explicitly requested open task/project; never echo input."""
+    fields = {"schema_version", "source", "kind", "app_version", "time_zone", "item"}
+    item_fields = {"id", "title", "status", "project", "scheduled_date", "modified_at", "notes", "deadline"}
+    if (kind not in {"task", "project"} or type(item_id) is not str
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", item_id) is None
+            or type(data) is not dict or set(data) != fields
+            or type(data["schema_version"]) is not int or data["schema_version"] != 2
+            or data["source"] != "things" or data["kind"] != kind
+            or type(data["app_version"]) is not str or len(data["app_version"]) > 64
+            or type(data["time_zone"]) is not str
+            or re.fullmatch(r"[A-Za-z0-9_+./-]{1,128}", data["time_zone"]) is None
+            or type(data["item"]) is not dict or set(data["item"]) != item_fields
+            or data["item"]["id"] != item_id):
+        raise AdapterError("Invalid adapter response; output discarded")
+    # Reuse the existing exact field/date validation without changing page APIs.
+    from things_previews import valid_notes
+    if not valid_notes(data["item"]["notes"]):
+        raise AdapterError("Invalid adapter response; output discarded")
+    row = {key: value for key, value in data["item"].items() if key != "notes"}
+    page = {"schema_version": 2, "source": "things", "unsupported_fields": UNSUPPORTED_FIELDS,
+            "kind": "list", "container_id": "exact-item", "container_name": "Exact item",
+            "app_version": data["app_version"], "offset": 0, "limit": 1, "total_count": 1,
+            "returned_count": 1, "next_offset": None, "has_more": False, "items": [row]}
+    validate_page(page, "list", "exact-item", 0, 1, metadata=True)
+    return data
+
+
+def read_item(kind, item_id, runner=None):
+    if kind not in {"task", "project"} or type(item_id) is not str or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", item_id) is None:
+        raise AdapterError("Invalid exact-item request")
+    capabilities()
+    runner = runner or bounded_run
+    try:
+        result = runner(["/usr/bin/osascript", str(ITEM_SCRIPT), kind, item_id],
+                        capture_output=True, text=True, encoding="utf-8", timeout=65, check=False)
+    except subprocess.TimeoutExpired:
+        raise AdapterError("Read exceeded the 65-second process deadline; stopped without retry") from None
+    except (OSError, UnicodeError):
+        raise AdapterError("Could not execute or decode the Things reader") from None
+    if result.returncode:
+        raise AdapterError(classify_failure(result.stderr))
+    try:
+        data = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        raise AdapterError("Invalid JSON from reader; output discarded") from None
+    return validate_item(data, kind, item_id)
+
+
+def bounded_run(cmd, **kwargs):
+    """Capture in memory with a shared byte cap and a hard process deadline."""
+    deadline = time.monotonic() + kwargs.get("timeout", 65)
+    try:
+        with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
+            chunks = {proc.stdout: bytearray(), proc.stderr: bytearray()}
+            total = 0
+            try:
+                with selectors.DefaultSelector() as selector:
+                    for stream in chunks:
+                        os.set_blocking(stream.fileno(), False)
+                        selector.register(stream, selectors.EVENT_READ)
+                    while selector.get_map():
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise subprocess.TimeoutExpired(cmd[0], kwargs.get("timeout", 65))
+                        for key, _ in selector.select(min(remaining, 0.1)):
+                            block = os.read(key.fd, 65536)
+                            if not block:
+                                selector.unregister(key.fileobj)
+                                continue
+                            total += len(block)
+                            if total > MAX_OUTPUT:
+                                raise AdapterError("Reader output exceeded memory limit; discarded")
+                            chunks[key.fileobj].extend(block)
+                proc.wait(timeout=max(0.001, deadline - time.monotonic()))
+                return subprocess.CompletedProcess(cmd, proc.returncode,
+                    bytes(chunks[proc.stdout]).decode("utf-8"), bytes(chunks[proc.stderr]).decode("utf-8"))
+            except BaseException:
+                proc.kill()
+                proc.wait()
+                raise
+    except (OSError, UnicodeError):
+        raise AdapterError("Could not execute or decode the Things reader") from None
 
 
 def classify_failure(stderr):
@@ -209,10 +347,16 @@ def diagnose(settings, runner=None):
 def read_page(args, runner=None):
     kind, container_id = target_for(args)
     limit = args.limit if args.limit is not None else 30
-    runner = runner or subprocess.run
+    metadata = getattr(args, "metadata", False)
+    if metadata:
+        capabilities()
+    runner = runner or bounded_run
+    command = ["/usr/bin/osascript", str(SCRIPT), kind, container_id, str(args.offset), str(limit)]
+    if metadata:
+        command.append("metadata")
     try:
         result = runner(
-            ["/usr/bin/osascript", str(SCRIPT), kind, container_id, str(args.offset), str(limit)],
+            command,
             capture_output=True, text=True, encoding="utf-8", timeout=65, check=False,
         )
     except subprocess.TimeoutExpired:
@@ -225,7 +369,7 @@ def read_page(args, runner=None):
         data = json.loads(result.stdout)
     except (ValueError, TypeError):
         raise AdapterError("Invalid JSON from reader; output discarded") from None
-    return validate_page(data, kind, container_id, args.offset, limit)
+    return validate_page(data, kind, container_id, args.offset, limit, metadata)
 
 
 def main(argv=None):

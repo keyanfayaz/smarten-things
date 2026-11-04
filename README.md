@@ -1,108 +1,108 @@
-# Things AppleScript
+# My Things Connection
 
-A small, local, read-only Things 3 adapter plus the recovered original scan.
-Reads use native AppleScript and public properties. Python validates a strict
-field allowlist before emitting JSON. No third-party dependencies or installation.
+A small macOS Things 3 reader, authenticated loopback HTTP service, backend
+dashboard client, and optional local stdio MCP facade. Python 3.10+ and the
+standard library only. The existing AppleScript implementation is extended;
+the historical scan remains inactive.
 
-For another Mac, follow the [repeatable setup guide](docs/SETUP.md), starting with
-the task-free `--doctor` check. Read the [capability and security contract](docs/CONTRACT.md)
-before integration. This is a local CLI, not an installed MCP server or Dot tool.
+Start with [setup](docs/SETUP.md), the [security contract](docs/CONTRACT.md),
+[HTTP API](docs/API.md), and [dashboard integration](docs/DASHBOARD.md).
+See [remote access and ChatGPT](docs/REMOTE.md) for the distinct network paths.
+For an installable local companion plugin, see [plugin setup](docs/PLUGIN.md).
+See [the source audit and staged rollout](docs/ROLLOUT.md) for recovered work,
+new field support and the remaining live acceptance steps.
 
-## Setup and use
+The optional [individual task-change workflow](docs/PREVIEWS.md) supports task
+creation and title, description/notes, start-day and deadline updates after exact preview and explicit per-item
+owner approval in chat. It trusts the authenticated assistant/host to obtain
+that approval; it does not independently prove a human reply. A separate local
+write credential and a local owner enable action are required. Writes start
+disabled on every service start/restart. The default MCP and local companion
+plugin still advertise only `read_things_page`; existing read credentials never
+authorize a mutation. No live change is implied by deployment or passing tests.
 
-Requirements: macOS, Python 3.10+, and Things 3 installed at
-`/Applications/Things3.app`. Run from an interactive Mac session that can resolve
-the app. Open Things yourself before reading. The executing process must already
-have appropriate Apple Events access; this adapter does not grant access, change
-security settings, or retry a denial. macOS may present its own Automation prompt
-on a first read; stop if access is unavailable.
+## CLI
 
 ```sh
-python3 things_readonly.py --help
-python3 things_readonly.py --doctor
-python3 things_readonly.py --list inbox --limit 10
-python3 things_readonly.py --list today --offset 10 --limit 10
-python3 things_readonly.py --projects --limit 10
-python3 things_readonly.py --project PROJECT_ID --limit 10
+python3 -B -m unittest discover -s tests -v
+python3 -B things_readonly.py --doctor
+# Following commands return private task data. Never paste their output into logs/Git/CI.
+python3 -B things_readonly.py --list today --limit 10
+python3 -B things_readonly.py --list inbox --metadata --limit 10
+python3 -B things_readonly.py --list upcoming --metadata --limit 10
+python3 -B things_readonly.py --projects --metadata --limit 10
+python3 -B things_readonly.py --project PROJECT_ID --metadata --limit 10
 ```
 
-Each command makes one bounded read. `--projects` returns open project summaries;
-`--project` returns open items in one open project. Only Inbox and Today are
-accepted list targets. No arguments means usage help and an error, never a scan.
-Limits are 1–50 (default 30); offsets are zero-based, 0–1,000,000. Follow
-`next_offset` while `has_more` is true if more pages are wanted. Pagination is
-explicit; there is no automatic crawl.
+Schema 1 remains the default CLI contract. `--metadata` selects schema 2; the HTTP
+service always uses schema 2. Pages contain at most 50 open items (default 30).
+Offsets are 0–1,000,000. There is no implicit crawl or export. Optional INI settings
+remain supported; see `config.example.ini`. No arguments prints usage and fails.
 
-`--config .things-readonly.ini` explicitly loads optional machine-local settings.
-The [example](config.example.ini) supplies a default page limit and optional
-installed-version comparison. `--limit` overrides the configured default.
-Configuration cannot add commands, change the fixed app path, or grant access.
+The task-free doctor checks disk metadata and app discovery. A successful doctor
+does **not** establish Automation permission or working reads. Things must be
+open in the logged-in desktop session. [Automation steps](docs/SETUP.md) explain
+the permission boundary; no security settings are reset or repaired.
 
-Success: exit 0 and one validated JSON page on stdout. Failure: exit 1 and a
-sanitized diagnostic on stderr, no page. Invalid arguments: exit 2. Nothing is
-saved by the adapter. Titles, names and IDs are private even when notes are absent;
-do not paste real output into commits, issues, fixtures, or CI logs.
-`--doctor` instead emits a prerequisite report; exit 0 means those checks passed,
-not that Apple Events access or live task reads work. Failed checks exit 1.
-
-## Read and output allowlist
-
-The active script reads only app `version`, list/project `id` and `name`, project
-and item `status`, and item `id` and `name`. It requests open collections and their
-counts. Item names become `title`. It does not request whole property records.
-
-| Output location | Exact fields |
-| --- | --- |
-| Page | `schema_version`, `kind`, `container_id`, `container_name`, `app_version`, `offset`, `limit`, `total_count`, `returned_count`, `next_offset`, `has_more`, `items` |
-| Each item | `id`, `title`, `status` |
-
-`schema_version` is 1. Status is always `open`. `total_count` counts the eligible
-open collection for that request; it is not a total across Things. Empty titles,
-duplicate titles, Unicode and collection order are preserved. Duplicate IDs
-within a page, unknown fields, closed statuses, and inconsistent pagination fail
-validation and discard the output.
-
-Excluded: notes, archived/completed/canceled item contents, private JSON,
-checklists, headings, recurrence rules, attachments, database files, task edits,
-UI commands and experimental reorder commands. There is no HTTP service, plugin,
-agent tool registration, background worker, credential store, or persistent cache.
-
-## Tests and compilation
+## Local service
 
 ```sh
-python3 -m unittest discover -s tests -v
-python3 -m py_compile things_readonly.py
-# macOS with Things installed; compile only, no live read:
+# Creates only a random owner-only credential; never prints it or overwrites one.
+python3 -B things_service.py --init-token
+python3 -B things_service.py
+```
+
+The service binds only `127.0.0.1:8766`; all routes require bearer authentication.
+Fixed GET reads use the original read credential. Optional task changes require
+the separate locally enabled write capability. No browser access/CORS,
+database, exports, background scans, or task logs. Credentials stay in
+`~/Library/Application Support/ThingsReadOnly/token` (600, parent 700), outside Git.
+Use the backend client rather than putting a token in browser JavaScript.
+
+Optional login startup: `python3 -B service_control.py install`. This writes a
+user LaunchAgent and starts it in the current GUI domain. It never opens Things
+or requests Automation permission. [Startup/shutdown details](docs/SETUP.md).
+
+## Integration status
+
+The backend client and deterministic daily review helper are ready to integrate.
+They accept Things pages and separately supplied Linear records, preserve source
+identity, deduplicate by ID, and never merge equal titles. Explicit cross-source
+links can combine known duplicates without changing either source. Modification
+data supports **review candidates**, not claims of meaningful project progress.
+
+`things_mcp.py` is an optional stdio MCP server that reads through the authenticated
+HTTP service. It does not create an HTTP `/mcp` endpoint or register itself with
+any application. Local readiness does not mean ChatGPT is connected. Tailscale
+Serve and any OpenAI Secure MCP Tunnel require separate configuration; no tunnel
+or public exposure is enabled by this repository.
+
+`python3 -B build_plugin.py` builds a local marketplace in `dist/things-local`.
+It bundles only reviewed code, documentation, read-only plugin metadata and a
+stdio launcher. It never copies the credential or private data, registers or
+enables the plugin, requests Automation permission, or calls Things. The package
+can be installed by a supported local desktop client after source registration;
+the hosted ChatGPT connection remains separate. See [plugin setup](docs/PLUGIN.md).
+
+## Verification and limits
+
+```sh
+python3 -B -m unittest discover -s tests -v
+python3 -m py_compile things_readonly.py things_service.py things_access.py dashboard_client.py things_mcp.py service_control.py verify_live.py
 osacompile -o /tmp/things-readonly.scpt src/read.applescript
+# Only after Things is open and Automation is authorized; prints no task content:
+python3 -B verify_live.py
 ```
 
-Tests use synthetic values and mocked process results, never a live Things app.
-GitHub Actions runs these tests and Python compilation on Linux. It does not
-compile AppleScript or test live Apple Events. Review [provenance](docs/PROVENANCE.md)
-for the recovery boundary and [verification](docs/VERIFICATION.md) for observed checks.
+Tests use synthetic data, real ephemeral localhost HTTP sockets and mocked Things
+calls. `verify_live.py` is a separate opt-in real read. See
+[observed verification](docs/VERIFICATION.md) and [source provenance](docs/PROVENANCE.md).
 
-## Known limits
-
-- This is a newly hardened derivative of a recovered scan, not a recovered copy
-  of the later metadata wrapper. See `historical/scan.applescript` for the original.
-- The app path is fixed. App discovery and Apple Events may behave differently
-  in a sandbox, remote session, or different process even when the app is open.
-- Pages load the eligible collection before slicing. This limits emitted items,
-  not Things' internal work, and is not server-side pagination.
-- Item count is bounded; string lengths, subprocess output bytes and collection
-  memory are not. This portability update does not close those resource gaps.
-- Read-only behavior comes from the reviewed code, not an OS-enforced read-only
-  permission. Runtime script integrity and app code signatures are not verified.
-- Pages are not atomic snapshots. Changes between calls may skip or repeat IDs.
-  Deduplicate IDs across pages and refresh a changing container. A status change
-  detected during one read discards the page.
-- List membership and project nesting follow the public scripting interface.
-  No UI comparison or guarantee of recursive subtree coverage is provided.
-- Reads preserve returned order and do not establish a priority or urgency score.
-- Apple Events have a 60-second timeout; Python has a 65-second process deadline.
-  Killing the reader does not guarantee cancellation inside Things. There is no
-  retry, incremental sync, mutation API, or full inventory guarantee.
-- `-10827` indicates app launch/discovery failure; `-1728` can indicate app or
-  object resolution failure. Neither alone proves a permission denial.
-  `-1742`/`-1743` stop as Apple Events access denials. Do not retry denied access
-  or change security settings as part of using this repository.
+Read-only is enforced by the reviewed interface and code, not a read-only macOS
+permission. A user/process that can change the code is outside that boundary.
+Things loads collections before slicing; collection memory/work is not bounded
+by the emitted page size. Captured subprocess output is capped at 1 MiB and has
+a 65-second deadline; Apple Events time out after 60 seconds. Pages are not
+atomic snapshots: deduplicate IDs and show partial coverage. Upcoming uses a
+historical built-in list identifier and can be unavailable on other versions.
+General When dates, priorities, recurrence and progress history are unsupported.

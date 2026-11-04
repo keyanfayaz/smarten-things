@@ -21,9 +21,11 @@ scan as the active adapter.**
 `src/read.applescript` and `things_readonly.py` are newly written derivatives:
 they retain the original native public-read approach and Foundation JSON encoding,
 restrict reads to open projects and open items, add explicit pagination, validate
-fields, enforce a process timeout, and suppress raw diagnostics. They do not
-include the later metadata wrapper, date fields, tags, persistent caching or a
-previous task's workflow preferences.
+fields, enforce a process timeout, and suppress raw diagnostics. Later local development added public metadata, authenticated HTTP/MCP, scoped
+preview/apply/status operations and local packaging. That source was recovered
+into version control in November 2026. No task output, credential or journal
+is included. The description/notes and deadline extension preserves this
+public AppleScript approach; it does not read the database or private properties.
 
 Earlier development recorded successful snapshots followed by app/object
 resolution errors `-1728` and Launch Services error `-10827`. These errors are

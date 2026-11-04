@@ -19,3 +19,7 @@ cleanup-proposal*
 wrapper-diagnosis*
 .things-readonly.ini
 *.local.ini
+*.token
+token
+runtime/
+dist/

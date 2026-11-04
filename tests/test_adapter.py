@@ -133,11 +133,11 @@ class InvocationTests(unittest.TestCase):
 
     def test_timeout_and_invalid_json_do_not_leak_output(self):
         args = adapter.arguments(["--projects"])
-        with patch.object(adapter.subprocess, "run", side_effect=subprocess.TimeoutExpired("synthetic", 65)) as runner:
+        with patch.object(adapter, "bounded_run", side_effect=subprocess.TimeoutExpired("synthetic", 65)) as runner:
             with self.assertRaisesRegex(adapter.AdapterError, "65-second"):
                 adapter.read_page(args)
             self.assertEqual(runner.call_count, 1)
-        with patch.object(adapter.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="SYNTHETIC_PRIVATE_TITLE", stderr="")):
+        with patch.object(adapter, "bounded_run", return_value=SimpleNamespace(returncode=0, stdout="SYNTHETIC_PRIVATE_TITLE", stderr="")):
             with self.assertRaises(adapter.AdapterError) as caught:
                 adapter.read_page(args)
             self.assertNotIn("SYNTHETIC_PRIVATE_TITLE", str(caught.exception))
