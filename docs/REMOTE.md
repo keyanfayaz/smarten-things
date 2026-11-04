@@ -4,6 +4,13 @@ These are three different capabilities. The installed HTTP service listens only
 on loopback. Nothing in installation publishes it, registers a ChatGPT plugin,
 changes Tailscale, starts a tunnel or sends tasks to a cloud service.
 
+The owner's existing private Secure MCP Tunnel and ChatGPT plugin were separately
+configured and verified with live reads. On November 4, 2026, their coordinated
+runtime was updated and the same hosted plugin renamed **My Things Connection**.
+See [current verification](VERIFICATION.md) for the observed checkpoint and
+remaining live-write/device acceptance. The setup guidance below describes
+requirements for a new installation, rather than the current owner's status.
+
 | Path | Who can reach it | Status/requirements |
 | --- | --- | --- |
 | Local HTTP | Trusted backend on this Mac + bearer token | Implemented; no browser/CORS access |

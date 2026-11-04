@@ -57,8 +57,11 @@ Source: [Things AppleScript commands](https://culturedcode.com/things/support/ar
    clients, including a second device. Client refresh behavior must be observed;
    a Git push alone does not establish device rollout.
 
-This source change completes the first stage. It does not claim deployment,
-private-plugin rename or cross-device acceptance. The exact-item schema upgrade
-requires coordinated service/client rollout; outstanding old previews must be
-regenerated. The system still does not support task completion/deletion, bulk
-changes, recurrence, checklists or project moves through its write tools.
+The November 4 deployment installed the coordinated runtime and restarted the
+existing tunnel, then renamed and refreshed the same hosted plugin. See the
+[deployment checkpoint](VERIFICATION.md) for observed read/discovery evidence.
+Real notes/date mutations and cross-device acceptance remain pending. The
+exact-item schema upgrade requires coordinated service/client rollout; old
+previews must be regenerated. The system still does not support task
+completion/deletion, bulk changes, recurrence, checklists or project moves
+through its write tools.
