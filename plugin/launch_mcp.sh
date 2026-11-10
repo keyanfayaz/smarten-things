@@ -7,5 +7,5 @@ for python_path in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/pyt
         exec "$python_path" -B "$plugin_dir/server/things_mcp.py"
     fi
 done
-printf '%s\n' 'My Things Connection requires an existing Python 3.10+ installation.' >&2
+printf '%s\n' 'Smarten for Things requires an existing Python 3.10+ installation.' >&2
 exit 1

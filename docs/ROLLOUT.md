@@ -1,8 +1,12 @@
 # Source audit and staged rollout
 
+This document records the November 4, 2026 rollout under the former
+**My Things Connection** name. Current source and generated packages use
+**Smarten for Things**, version 2.2.1; the historical observations below are retained.
+
 ## Findings
 
-The repository is `keyanfayaz/things-applescript`. GitHub's original `84c2ccb`
+The repository is `keyanfayaz/smarten-things`. GitHub's original `84c2ccb`
 baseline lagged behind the local implementation. The recovered code matches all
 13 source files installed in the service runtime before the new field changes.
 The original reader had 19 tests; the recovered service and write workflow had

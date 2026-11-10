@@ -1,4 +1,4 @@
-# Local My Things Connection plugin
+# Local Smarten for Things plugin
 
 The service and MCP facade now have a buildable local companion plugin. The
 plugin is intended for a supported desktop client executing on the service-hosting
@@ -7,6 +7,10 @@ capability and no external endpoint. Existing Automation/live-read verification
 can remain pending while the package is built, registered and discovered.
 
 ## Build
+
+The display name is **Smarten for Things**. The existing `things-readonly` plugin
+ID and `things-local` marketplace ID are retained for compatibility. Account-level
+ChatGPT connection names are edited separately in the owning client.
 
 From this repository:
 
@@ -63,8 +67,8 @@ existing source rather than creating a duplicate. If a running desktop client
 doesn't refresh its directory, close/reopen it when convenient.
 
 Registration makes the source discoverable; it does not install or enable the
-plugin. In the desktop client's Plugins Directory, choose **Things Local**, then
-install **My Things Connection**. Use a new local conversation afterward. Actual
+plugin. In the desktop client's Plugins Directory, choose **Smarten for Things**, then
+install **Smarten for Things**. Use a new local conversation afterward. Actual
 client availability and policy can vary. Do not claim that a plugin is installed
 or task reads work from registration or synthetic discovery alone.
 
@@ -94,7 +98,7 @@ unregistered directory does not change that cached installation. Build a reviewe
 new version and update the local source/installed copy through the client. Never
 put a token or private output into the package while debugging an installation.
 
-Disable/uninstall only My Things Connection in the client to remove conversational
+Disable/uninstall only Smarten for Things in the client to remove conversational
 access. Removing the `things-local` marketplace source is separate from uninstalling
 an installed copy. The background service remains managed by `service_control.py`;
 no cleanup should remove a Things library or dashboard database.

@@ -10,7 +10,7 @@ import shutil
 import sys
 
 ROOT = Path(__file__).resolve().parent
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 SOURCES = (
     "things_mcp.py", "dashboard_client.py", "things_service.py",
     "things_readonly.py", "things_access.py", "src/read.applescript",
@@ -48,8 +48,8 @@ def build(output, source=ROOT):
         shutil.copyfile(path, target)
         target.chmod(0o644)
     interface = {
-        "displayName": "My Things Connection",
-        "shortDescription": "Read open Things tasks through your private Mac service.",
+        "displayName": "Smarten for Things",
+        "shortDescription": "Read open Things tasks",
         "longDescription": "Local, authenticated Things reads. No writes, automatic scans or remote exposure. Requires the existing Things read-only service.",
         "category": "Productivity", "capabilities": ["Read"],
         "defaultPrompt": ["Show my Things Today tasks.", "List my open Things projects."],
@@ -58,7 +58,7 @@ def build(output, source=ROOT):
         "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
         "name": "things-readonly", "version": VERSION,
         "description": "Private read-only Things 3 access on the service-hosting Mac.",
-        "repository": "https://github.com/keyanfayaz/things-applescript",
+        "repository": "https://github.com/keyanfayaz/smarten-things",
         "extensions": {"com.openai": {"requires_local_executor": True, "interface": interface}},
     }
     mcp = {"mcpServers": {"things": {"type": "stdio", "command": "/bin/sh",
@@ -74,7 +74,7 @@ def build(output, source=ROOT):
     })
     write_json(plugin / ".mcp.json", mcp)
     write_json(output / ".agents/plugins/marketplace.json", {
-        "name": "things-local", "interface": {"displayName": "Things Local"},
+        "name": "things-local", "interface": {"displayName": "Smarten for Things"},
         "plugins": [{"name": "things-readonly",
             "source": {"source": "local", "path": "./plugins/things-readonly"},
             "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},

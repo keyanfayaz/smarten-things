@@ -3,7 +3,7 @@
 ## Deployment checkpoint — 2026-11-04
 
 Source commit `463569b` passed both GitHub Actions jobs:
-[portable suite and macOS native fixtures](https://github.com/keyanfayaz/things-applescript/actions/runs/41854377988).
+[portable suite and macOS native fixtures](https://github.com/keyanfayaz/smarten-things/actions/runs/41854377988).
 The local run passed 133 tests. The working source and all 13 installed runtime
 files matched after deployment.
 

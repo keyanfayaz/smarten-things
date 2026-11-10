@@ -1,4 +1,6 @@
-# My Things Connection
+# Smarten for Things
+
+*Your apps, connected to AI.*
 
 A local bridge from Things 3 on macOS to a dashboard or assistant. Read task
 pages through AppleScript, an authenticated loopback HTTP service, or an optional
@@ -9,6 +11,17 @@ stdio MCP facade. Python 3.10+; standard library only.
 local owner enable action, an exact preview, and explicit per-item owner approval
 in chat. Writes start disabled after every service start or restart; read
 credentials never authorize a mutation. The host is trusted to obtain approval.
+
+## The Smarten family
+
+Smarten for Things is part of **Smarten**, alongside
+[Smarten for Safari](https://github.com/keyanfayaz/smarten-safari).
+
+Existing script names, plugin ID `things-readonly`, marketplace ID `things-local`,
+service paths, and connection settings are retained for existing configurations.
+MCP discovery advertises the new display title while retaining its existing
+server and tool identifiers. An existing hosted connection must be renamed in
+its owning client; updating this repository does not change account-level names.
 
 ## Start here
 

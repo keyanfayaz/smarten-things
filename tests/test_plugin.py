@@ -24,9 +24,9 @@ class PluginTests(unittest.TestCase):
         overlay = manifest["extensions"]["com.openai"]
         self.assertTrue(overlay["requires_local_executor"])
         self.assertEqual(overlay["interface"]["capabilities"], ["Read"])
-        self.assertEqual(overlay["interface"]["displayName"], 'My Things Connection')
+        self.assertEqual(overlay["interface"]["displayName"], 'Smarten for Things')
         self.assertEqual(manifest['name'], 'things-readonly')
-        self.assertEqual(manifest['version'], '2.2.0')
+        self.assertEqual(manifest['version'], '2.2.1')
         self.assertNotIn("hooks", overlay)
         self.assertNotIn("onboardingSkill", overlay)
         self.assertNotIn("skills", manifest)

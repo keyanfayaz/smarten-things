@@ -1,4 +1,4 @@
-# My Things Connection — local plugin
+# Smarten for Things — local plugin
 
 This companion plugin reads the authenticated Things service on
 `http://127.0.0.1:8766` through one local stdio MCP tool. Use it on the Mac that
@@ -33,8 +33,8 @@ on-install hooks, setup workflow, automatic scan or write tools.
 
 Register the **marketplace root**, which contains `.agents/plugins/marketplace.json`,
 with `codex plugin marketplace add /absolute/path/to/marketplace-root`. Open a
-supported desktop client's Plugins Directory, choose **Things Local**, and install
-**My Things Connection**. Local client availability/policy can vary. Registration is
+supported desktop client's Plugins Directory, choose **Smarten for Things**, and install
+**Smarten for Things**. Local client availability/policy can vary. Registration is
 not installation or activation; actual GUI installation must be verified in that
 client. Use a new local thread after installation. No public submission is needed.
 

@@ -1,4 +1,4 @@
-# My Things Connection
+# Smarten for Things
 
 A small macOS Things 3 reader, authenticated loopback HTTP service, backend
 dashboard client, and optional local stdio MCP facade. Python 3.10+ and the

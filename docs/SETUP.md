@@ -9,8 +9,8 @@ service is needed. Moving the code to another Mac does not move its library,
 Automation permission, credential or login session.
 
 ```sh
-git clone https://github.com/keyanfayaz/things-applescript.git
-cd things-applescript
+git clone https://github.com/keyanfayaz/smarten-things.git
+cd smarten-things
 python3 -B -m unittest discover -s tests -v
 python3 -B things_readonly.py --doctor
 ```
