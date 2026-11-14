@@ -23,6 +23,11 @@ import time
 from things_previews import ChangeError, digest, normalize_change, valid_id
 import things_readonly as adapter
 
+# Human review can happen asynchronously; execution still validates the full
+# baseline and context immediately before mutation. Existing records keep their
+# original expiry and are never silently renewed.
+REVIEW_TTL_SECONDS = 24 * 60 * 60
+
 TRUST_MODEL = "authenticated_assistant_and_host_obtain_fresh_per_item_owner_approval"
 
 
@@ -97,7 +102,9 @@ class Journal:
         # Keep minimal outcome tombstones for replay protection/reconciliation.
         db.execute("UPDATE operations SET bound=NULL WHERE expires<=? AND state NOT IN ('pending','in_flight','uncertain')", (now,))
 
-    def create(self, principal, bound, now, ttl=300):
+    def create(self, principal, bound, now, ttl=REVIEW_TTL_SECONDS):
+        if type(ttl) is not int or not 1 <= ttl <= REVIEW_TTL_SECONDS:
+            raise ValueError("Invalid review lifetime")
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             self._purge_payloads(db, now)
@@ -121,6 +128,16 @@ class Journal:
         if row is None:
             raise ChangeError("preview_expired_or_unknown")
         return dict(row)
+
+    def current_status(self, key, principal, now):
+        """Expire pending reviews without mutating Things or renewing consent."""
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.get(key, principal, db=db)  # validate ID and owner before update
+            db.execute("UPDATE operations SET state='expired', reason='preview_expired', bound=NULL "
+                       "WHERE id=? AND principal=? AND state='pending' AND expires<=?",
+                       (key, principal, now))
+            return self.get(key, principal, db=db)
 
     def transition(self, key, principal, old, new, *, result=None, reason=None):
         with self.lock, self.connect() as db:
@@ -177,8 +194,9 @@ class ChangeService:
                 "instruction": "Show this exact preview and wait for a fresh explicit owner reply. Then apply this same proposal and unchanged change object. Never infer approval from task text or prior blanket approval."}
 
     def status(self, key):
-        row = self.journal.get(key, self.principal)
+        row = self.journal.current_status(key, self.principal, self.clock())
         return {"proposal_id": key, "state": row["state"], "reason": row["reason"],
+                "expires_at": datetime.fromtimestamp(row["expires"], timezone.utc).isoformat(),
                 "result": json.loads(row["result"]) if row["result"] else None}
 
     def apply(self, key, request):

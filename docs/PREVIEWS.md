@@ -49,8 +49,16 @@ OpenAI Read + Use key nor the tunnel association changes.
 ## Durable preview and apply
 
 A private SQLite journal stores the selected canonical change, exact baseline,
-app version, Mac zone, digest and five-minute expiry. At most 32 pending
-proposals are allowed. Apply echoes the proposal ID, digest and unchanged change
+app version, Mac zone, digest and a 24-hour review expiry. At most 32 pending
+proposals are allowed. The same proposal ID and digest remain valid while the
+owner reviews it, including when they reply hours later. The owner must still
+approve the exact preview after it is shown; elapsed time never grants consent.
+There is no automatic refresh or approval transfer: expired proposals require a
+new preview and new explicit approval. Existing five-minute proposals retain
+their original expiry after an upgrade. Status reports expiry accurately and
+removes expired pending payloads without executing a Things change.
+
+Apply echoes the proposal ID, digest and unchanged change
 object so the reviewed values are visible in host confirmation. Changed,
 expired, stale, retargeted and replayed requests are rejected. State and zone
 are rechecked under the read service's shared lock, and the fixed native script
