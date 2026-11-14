@@ -10,7 +10,7 @@ import shutil
 import sys
 
 ROOT = Path(__file__).resolve().parent
-VERSION = "2.2.1"
+VERSION = "2.3.0"
 SOURCES = (
     "things_mcp.py", "dashboard_client.py", "things_service.py",
     "things_readonly.py", "things_access.py", "src/read.applescript",

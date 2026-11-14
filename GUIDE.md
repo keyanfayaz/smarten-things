@@ -13,7 +13,8 @@ See [the source audit and staged rollout](docs/ROLLOUT.md) for recovered work,
 new field support and the remaining live acceptance steps.
 
 The optional [individual task-change workflow](docs/PREVIEWS.md) supports task
-creation and title, description/notes, start-day and deadline updates after exact preview and explicit per-item
+creation, title/notes/date updates, exact-ID moves to existing projects and
+known-ID uncertainty reconciliation after exact preview and explicit per-item
 owner approval in chat. It trusts the authenticated assistant/host to obtain
 that approval; it does not independently prove a human reply. A separate local
 write credential and a local owner enable action are required. Writes start

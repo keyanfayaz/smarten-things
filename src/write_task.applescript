@@ -34,12 +34,19 @@ on run argv
         with timeout of 60 seconds
             tell application "/Applications/Things3.app"
                 if version is not ((expectedContext's objectForKey:"app_version") as text) then error "Context changed"
-                if operationName is "update" then
+                if operationName is "update" or operationName is "move" then
                     set requestedID to (change's objectForKey:"task_id") as text
                     set taskRef to to do id requestedID
                     if class of taskRef is project then error "Project outside task scope"
                     if not (my matchesSnapshot(taskRef, expected's objectForKey:"item")) then error "Item changed"
                     set changedID to id of taskRef
+                    if operationName is "move" then
+                        set destinationRef to project id ((change's objectForKey:"project_id") as text)
+                        set expectedDestination to request's objectForKey:"destination"
+                        if not (my matchesSnapshot(destinationRef, expectedDestination's objectForKey:"item")) then error "Project changed"
+                        set attemptedChange to true
+                        set project of taskRef to destinationRef
+                    end if
                     if newTitle is not missing value then
                         set attemptedChange to true
                         set name of taskRef to (newTitle as text)

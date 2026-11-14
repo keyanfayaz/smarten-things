@@ -4,9 +4,10 @@
 
 The default service and read credential read public native AppleScript properties
 of open Things items. A separately scoped, locally enabled capability adds only
-individual task creation and title, notes, start-day and deadline updates after preview/owner approval;
+individual task creation, title/notes/date updates, exact-ID task moves to an
+existing open project and known-ID uncertainty reconciliation after preview/owner approval;
 see [the complete write contract](PREVIEWS.md). No completion, cancellation,
-deletion, project move/creation, reorder, arbitrary script, live database SQL,
+deletion, moving/creating projects, reorder, arbitrary script, live database SQL,
 Things Cloud or cloud-credential API is exposed.
 `historical/scan.applescript` remains inactive. Linear is never accessed or modified
 by this service. A dashboard's existing read-only Linear source supplies records.

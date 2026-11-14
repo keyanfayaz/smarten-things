@@ -43,7 +43,7 @@ def write_capabilities():
     commands = {row.get('name'): row for row in root.findall('.//command')}
     if commands.get('make') is None or commands.get('schedule') is None:
         raise adapter.AdapterError("Supported Things write commands unavailable")
-    for field, kind in (("name", "text"), ("notes", "text"), ("due date", "date")):
+    for field, kind in (("name", "text"), ("notes", "text"), ("due date", "date"), ("project", "project")):
         prop = root.find('.//class[@name="to do"]/property[@name="'+field+'"]')
         if prop is None or prop.get('access') == 'r' or prop.get('type') != kind:
             raise adapter.AdapterError("Supported Things task update unavailable")

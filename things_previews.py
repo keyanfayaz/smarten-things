@@ -77,6 +77,17 @@ def normalize_change(value):
     return change
 
 
+def normalize_write_change(value):
+    """Production-only exact moves and evidence-bound reconciliation."""
+    if type(value) is dict and value.get("operation") in ("move", "reconcile"):
+        fields = ({"operation", "task_id", "project_id"} if value["operation"] == "move"
+                  else {"operation", "task_id", "original_proposal_id"})
+        if set(value) != fields or any(not valid_id(value[field]) for field in fields - {"operation"}):
+            raise ChangeError("invalid_change")
+        return copy.deepcopy(value)
+    return normalize_change(value)
+
+
 def digest(value):
     data = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(data.encode("utf-8")).hexdigest()

@@ -12,11 +12,15 @@ one-time host approvals.
 Create one open task with a title, optional description/notes, literal start day,
 deadline and existing open project ID; otherwise use Inbox. Update the title,
 notes, start day and/or deadline of one selected open task by exact ID.
+Move one selected open task to an existing open project using a separate
+`operation: move` proposal containing only `task_id` and `project_id`. Both exact
+snapshots are bound to the review and rechecked before the documented project
+property assignment. Task fields are preserved and verified afterward.
 An empty notes string clears notes; a null deadline clears the deadline.
 Omitted fields are preserved. Notes preserve multiline Unicode text and are
 bounded to 8,192 characters and 16,384 UTF-8 bytes. Exact-item reads use schema 2
 and include notes/deadline so previews and stale checks bind all reviewed fields.
-No deletion, completion, cancellation, bulk import, project creation/move, tags,
+No deletion, completion, cancellation, bulk import, project creation, moving a project, tags,
 recurrence editing, calendars or automatic startup is implemented. Do not select
 repeating task templates: the public reader cannot inspect recurrence and that
 use is unverified. Start days are literal YYYY-MM-DD calendar days in the Mac's
@@ -77,6 +81,40 @@ Startup converts interrupted claims to uncertain. New creations stay blocked
 while an unresolved operation exists; owner investigation/reconciliation is
 required before reopening creation. No title matching or duplicate create is
 used to guess an outcome.
+
+## Reconcile an uncertain operation
+
+First inspect status. If the journal has a known task ID, read that exact task
+and compare it with the original desired outcome. A misplaced task can be moved
+with its own exact move preview and fresh owner approval; moving it does not
+clear the original uncertainty. Correct any other differences through separately
+reviewed updates. Never create a replacement, guess by title, retry the original
+apply, or delete/reset journal records.
+
+Once the known task matches the original proposal, preview
+`{"operation":"reconcile","task_id":"synthetic-task","original_proposal_id":"synthetic-proposal"}`
+through the same production preview tool. The supplied task ID must equal the
+original journal's known ID. The service verifies title, notes, both dates,
+project, app version and time zone against the original create/update/move.
+Missing identity, mismatched fields, or an unknown/non-uncertain proposal fail
+closed. A reconciliation never calls the native writer.
+
+Show the exact preview, original proposal ID, known task ID and verification
+effect, then obtain a fresh explicit owner reply. Apply echoes the unchanged
+proposal, digest and change object. The service rechecks the full current task
+snapshot and original record before an atomic single-use journal commit. This
+adds a reconciliation record linked to the original; the original remains
+`uncertain` with its known ID, reason, payload and replay protection intact.
+Its status includes `reconciled_by`, the successful verification proposal ID.
+New creates reopen only when every uncertain operation has a verified link.
+An uncertain move needs its own reconciliation even if the original create
+was reconciled. No blanket resolve/clear endpoint is provided. Unknown-ID
+operations remain blocked for owner investigation; this API cannot clear them.
+
+The legacy non-mutating `--enable-previews` mode does not accept moves or
+reconciliation. Existing live project placement behavior needs dedicated native
+acceptance coverage: task-free fixtures exercise the project branch and snapshot
+checks but replace application operations, so they cannot prove Things placement.
 
 ## Privacy and prerequisites
 

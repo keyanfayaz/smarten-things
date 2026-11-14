@@ -143,6 +143,21 @@ updates or optional project_id for creation. Apply accepts exactly payload_diges
 and the unchanged change object. There is no approval boolean. The trusted
 assistant/host must obtain a fresh owner reply before submitting apply.
 
+Production previews also accept exactly these shapes:
+
+```json
+{"operation":"move","task_id":"synthetic-task","project_id":"synthetic-project"}
+{"operation":"reconcile","task_id":"synthetic-task","original_proposal_id":"synthetic-proposal"}
+```
+
+Moves bind both the task and destination project. Reconciliation verifies only
+the original journal's known task ID against its original desired outcome; it
+does not mutate Things. Both require a new exact preview and fresh per-item
+approval before the existing apply route. Status retains the original uncertain
+state/result and adds `reconciled_by` (null until verified). That proposal's
+result contains the verified read-back and original proposal ID. See the
+[reconciliation workflow](PREVIEWS.md#reconcile-an-uncertain-operation).
+
 `notes` is the task description. Multiline Unicode text is preserved; an empty
 string clears it. `deadline` is a local YYYY-MM-DD due day; null clears it.
 `start_date` is a separate local calendar start day, and cannot be cleared by

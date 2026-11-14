@@ -1,5 +1,32 @@
 # Verification
 
+## Recovery candidate — 2026-11-14
+
+The 2.3.0 candidate adds exact-ID task moves and known-ID reconciliation through
+the existing separately authorized preview/apply/status workflow. The local
+synthetic suite passes 154 tests, including the real MCP/loopback HTTP boundary,
+old-journal migration, stale task/destination/context checks, replay, wrong
+destination, partial failure, atomic reconciliation failure, restart, and multiple
+unresolved records. Reconciliation preserves the original uncertain row and never
+calls the native writer. All three fixed AppleScripts compile against the
+installed Things dictionary, whose project property supports assignment.
+
+Task-free AppleScript/Foundation fixtures now exercise the production project
+snapshot and move branches, replacing application calls with synthetic records.
+They do not establish native Things placement. Exact-item reads timed out during
+separate native investigation, so live task mutation acceptance remains blocked.
+The original project-create placement implementation is unchanged; its documented
+syntax is not evidence of the failure's cause. This candidate has not been deployed.
+
+Before release, restore reliable native exact-item reads without permission
+resets or hidden retries, then use only an isolated test area/project and its
+known synthetic task IDs. Verify project create, project move, title/notes/both
+dates and preserved fields through exact preview/approval/apply/read-back. Exercise
+a deliberately uncertain synthetic record, verify the create block, perform a
+separately approved correction, and reconcile its exact known ID once. Confirm
+the original uncertain record survives and repeat apply cannot mutate again.
+Live recovery of an existing personal task is a separate owner-approved action.
+
 ## Deployment checkpoint — 2026-11-04
 
 Source commit `463569b` passed both GitHub Actions jobs:

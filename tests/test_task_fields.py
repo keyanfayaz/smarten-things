@@ -7,12 +7,26 @@ import subprocess
 import tempfile
 import unittest
 
-from things_previews import ChangeError, normalize_change
+from things_previews import ChangeError, normalize_change, normalize_write_change
 import things_readonly as adapter
 from test_previews import item
 
 
 class TaskFieldValidationTests(unittest.TestCase):
+    def test_production_moves_and_reconciliation_are_strict_and_legacy_stays_scoped(self):
+        for operation in (None, [], {}, True, 'resolve', 'clear'):
+            with self.assertRaises(ChangeError): normalize_write_change({'operation': operation})
+        move = {'operation': 'move', 'task_id': 'synthetic-task', 'project_id': 'synthetic-project'}
+        reconcile = {'operation': 'reconcile', 'task_id': 'synthetic-task', 'original_proposal_id': 'synthetic-proposal'}
+        for value in (move, reconcile):
+            self.assertEqual(normalize_write_change(value), value)
+            with self.assertRaises(ChangeError): normalize_change(value)
+            for key in value:
+                invalid = dict(value); del invalid[key]
+                with self.assertRaises(ChangeError): normalize_write_change(invalid)
+            for extra in ({'approved': True}, {'title': 'Unexpected edit'}, {'project_id': None}):
+                with self.assertRaises(ChangeError): normalize_write_change(dict(value, **extra))
+
     def test_multiline_unicode_notes_preserve_exact_text_and_empty_clears(self):
         for notes in ('', 'Description\nSecond line\r\n\tUnicode: café 🗓', 'x'*8192):
             value = {'operation': 'update', 'task_id': 'synthetic-task', 'notes': notes}
@@ -52,7 +66,8 @@ class NativeTaskFieldTests(unittest.TestCase):
     No Things dictionary, application Apple Event, task database or credential
     is used. Native application behavior remains a separate live acceptance test.
     """
-    def run_native(self, change, *, baseline_notes='Original description', initial_deadline=None, initial_start=None):
+    def run_native(self, change, *, baseline_notes='Original description', initial_deadline=None, initial_start=None,
+                   destination_title='Synthetic title'):
         script = Path(__file__).resolve().parents[1]/'src/write_task.applescript'
         source = script.read_text()
         source = source.replace('    set change to request\'s objectForKey:"change"', '''    set fixtureFormatter to current application's NSISO8601DateFormatter's alloc()'s init()
@@ -64,13 +79,17 @@ class NativeTaskFieldTests(unittest.TestCase):
             source = source.replace('|due date|:missing value', '|due date|:(my calendarDay("'+initial_deadline+'"))')
         if initial_start:
             source = source.replace('|activation date|:missing value', '|activation date|:(my calendarDay("'+initial_start+'"))')
+        source = source.replace('    set change to request\'s objectForKey:"change"', '''    set syntheticProject to {id:"synthetic-project", name:"Synthetic title", |notes|:"", |status|:"open", |project|:missing value, |activation date|:missing value, |due date|:missing value, |modification date|:fixtureDate}
+    set change to request's objectForKey:"change"''')
         source = source.replace('set currentZone to (current application\'s NSTimeZone\'s localTimeZone()\'s |name|()) as text', 'set currentZone to "Synthetic/Zone"')
         source = source.replace('if version is not', 'if "synthetic" is not')
         source = source.replace('set taskRef to to do id requestedID', 'set taskRef to syntheticTask')
         source = source.replace('if class of taskRef is project then error "Project outside task scope"', '')
         source = source.replace('set taskRef to make new to do with properties {name:(newTitle as text)} at beginning of list id "TMInboxListSource"', 'set taskRef to syntheticTask\n                        set name of taskRef to (newTitle as text)')
-        source = source.replace('set destinationRef to project id (destinationID as text)', 'error "Project fixture not supported"')
-        source = source.replace('set taskRef to make new to do with properties {name:(newTitle as text)} at beginning of destinationRef', 'error "Project fixture not supported"')
+        source = source.replace('set destinationRef to project id (destinationID as text)', 'set destinationRef to syntheticProject')
+        source = source.replace('set destinationRef to project id ((change\'s objectForKey:"project_id") as text)', 'set destinationRef to syntheticProject')
+        source = source.replace('set taskRef to make new to do with properties {name:(newTitle as text)} at beginning of destinationRef',
+                                'set taskRef to syntheticTask\n                        set name of taskRef to (newTitle as text)\n                        set |project| of taskRef to syntheticProject')
         source = source.replace('schedule taskRef for startDay', 'set |activation date| of taskRef to startDay')
         for field in ('status', 'notes', 'project', 'activation date', 'due date', 'modification date'):
             for reference in ('taskRef', 'itemRef'):
@@ -82,6 +101,11 @@ class NativeTaskFieldTests(unittest.TestCase):
         observed's setObject:(|notes| of taskRef) forKey:"notes"
         observed's setObject:(my dateValue(|due date| of taskRef, true)) forKey:"deadline"
         observed's setObject:(my dateValue(|activation date| of taskRef, true)) forKey:"start_date"
+        if |project| of taskRef is missing value then
+            observed's setObject:(current application's NSNull's |null|()) forKey:"project_id"
+        else
+            observed's setObject:(id of |project| of taskRef) forKey:"project_id"
+        end if
         output's setObject:observed forKey:"fixture_observed"
     end if
     set jsonData to current application's NSJSONSerialization''')
@@ -92,8 +116,12 @@ class NativeTaskFieldTests(unittest.TestCase):
         baseline['item']['notes'] = baseline_notes
         baseline['item']['deadline'] = initial_deadline
         baseline['item']['scheduled_date'] = initial_start
+        destination = item('project', 'synthetic-project')
+        destination['time_zone'] = 'Synthetic/Zone'
+        destination['item']['title'] = destination_title
         bound = {'change': change, 'context': {'app_version': 'synthetic', 'time_zone': 'Synthetic/Zone'},
-                 'baseline': baseline if change['operation'] == 'update' else None}
+                 'baseline': baseline if change['operation'] != 'create' else destination if change.get('project_id') else None,
+                 'destination': destination if change['operation'] == 'move' else None}
         with tempfile.TemporaryDirectory() as directory:
             script_path = Path(directory)/'synthetic.applescript'
             request_path = Path(directory)/'request.json'
@@ -111,7 +139,7 @@ class NativeTaskFieldTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'applied')
         observed = result['fixture_observed']
         self.assertEqual(observed, {'title': 'Synthetic title', 'notes': change['notes'],
-                                   'start_date': change['start_date'], 'deadline': change['deadline']})
+                                   'start_date': change['start_date'], 'deadline': change['deadline'], 'project_id': None})
 
     def test_native_empty_notes_and_null_deadline(self):
         result = self.run_native({'operation': 'update', 'task_id': 'synthetic-task', 'notes': '', 'deadline': None},
@@ -141,6 +169,29 @@ class NativeTaskFieldTests(unittest.TestCase):
                                  baseline_notes='Stale description')
         self.assertEqual(result['outcome'], 'not_started')
         self.assertNotIn('fixture_observed', result)
+
+    def test_native_project_create_runs_project_snapshot_branch(self):
+        result = self.run_native({'operation': 'create', 'title': 'Synthetic project task',
+                                  'project_id': 'synthetic-project', 'notes': 'Synthetic notes'})
+        self.assertEqual(result['outcome'], 'applied')
+        self.assertEqual(result['fixture_observed']['project_id'], 'synthetic-project')
+        self.assertEqual(result['fixture_observed']['notes'], 'Synthetic notes')
+
+    def test_native_move_preserves_task_fields_and_checks_destination(self):
+        change = {'operation': 'move', 'task_id': 'synthetic-task', 'project_id': 'synthetic-project'}
+        result = self.run_native(change, initial_start='2028-02-29', initial_deadline='2028-03-05')
+        self.assertEqual(result['outcome'], 'applied')
+        self.assertEqual(result['fixture_observed'], {'title': 'Synthetic title', 'notes': 'Original description',
+            'start_date': '2028-02-29', 'deadline': '2028-03-05', 'project_id': 'synthetic-project'})
+        rejected = self.run_native(change, destination_title='Stale project')
+        self.assertEqual(rejected['outcome'], 'not_started')
+        self.assertEqual(rejected['id'], 'synthetic-task')
+
+    def test_native_project_create_rejects_stale_destination(self):
+        result = self.run_native({'operation': 'create', 'title': 'Synthetic project task',
+                                 'project_id': 'synthetic-project'}, destination_title='Stale project')
+        self.assertEqual(result['outcome'], 'not_started')
+        self.assertIsNone(result['id'])
 
 
 if __name__ == '__main__':
