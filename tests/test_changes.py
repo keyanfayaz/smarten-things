@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 
 from test_previews import item
 from things_change_client import ChangeClient, ChangeClientError
-from things_changes import ChangeService, Journal
+from things_changes import ChangeService, Journal, REVIEW_TTL_SECONDS
 from things_native_write import NativeWriter
 from things_previews import ChangeError
 import things_access
@@ -150,12 +150,54 @@ class DurableChanges(unittest.TestCase):
         self.writer.assert_not_called()
 
     def test_expiry_and_once_only_replay(self):
-        proposal = self.preview(); self.now += 301
+        proposal = self.preview(); self.now += REVIEW_TTL_SECONDS + 1
         self.error('preview_expired_or_unknown', self.apply, proposal)
         self.assertEqual(self.engine.status(proposal['proposal_id'])['state'], 'expired')
         proposal = self.preview(); self.apply(proposal)
         self.error('preview_already_used_check_status', self.apply, proposal)
         self.assertEqual(self.writer.call_count, 1)
+
+    def test_review_can_wait_until_later_without_new_proposal(self):
+        proposal = self.preview()
+        self.now += 6 * 60 * 60
+        status = self.engine.status(proposal['proposal_id'])
+        self.assertEqual(status['state'], 'pending')
+        self.assertEqual(status['expires_at'], proposal['expires_at'])
+        self.assertEqual(self.apply(proposal)['state'], 'applied')
+        self.assertEqual(self.writer.call_count, 1)
+
+    def test_delayed_review_still_rejects_changed_baseline(self):
+        proposal = self.preview()
+        self.now += 6 * 60 * 60
+        self.records['synthetic-task']['item']['notes'] = 'Changed while away'
+        self.error('preview_stale', self.apply, proposal)
+        self.writer.assert_not_called()
+
+    def test_status_expires_at_boundary_and_clears_payload_without_write(self):
+        proposal = self.preview()
+        self.now += REVIEW_TTL_SECONDS
+        status = self.engine.status(proposal['proposal_id'])
+        self.assertEqual(status['state'], 'expired')
+        self.assertEqual(status['reason'], 'preview_expired')
+        self.assertIsNone(self.journal.get(proposal['proposal_id'], 'synthetic-owner')['bound'])
+        self.error('preview_already_used_check_status', self.apply, proposal)
+        self.writer.assert_not_called()
+
+    def test_old_short_lifetime_is_not_extended(self):
+        proposal = self.preview()
+        row = self.journal.get(proposal['proposal_id'], 'synthetic-owner')
+        with self.journal.connect() as db:
+            db.execute('UPDATE operations SET expires=? WHERE id=?', (self.now + 300, row['id']))
+        self.now += 301
+        self.assertEqual(self.engine.status(row['id'])['state'], 'expired')
+        self.writer.assert_not_called()
+
+    def test_status_cannot_expire_another_principals_proposal(self):
+        proposal = self.preview()
+        self.now += REVIEW_TTL_SECONDS + 1
+        self.error('preview_expired_or_unknown', self.journal.current_status,
+                   proposal['proposal_id'], 'other-owner', self.now)
+        self.assertEqual(self.journal.get(proposal['proposal_id'], 'synthetic-owner')['state'], 'pending')
 
     def test_durable_result_survives_restart_and_cannot_replay(self):
         proposal = self.preview(); self.apply(proposal)
