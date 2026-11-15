@@ -46,7 +46,7 @@ class LocalConsentTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), "")
 
     def test_only_initial_consent_required_state_can_prompt(self):
-        for status in ["granted", "denied", "app_not_running", "unsupported", "unavailable"]:
+        for status in ["granted", "denied", "app_not_running", "unsupported", "unavailable", "timed_out"]:
             reader = service.LiveReader()
             with self.subTest(status=status), patch.object(service, "permission_status", return_value=status) as permission, \
                     patch.object(adapter, "read_page") as read:

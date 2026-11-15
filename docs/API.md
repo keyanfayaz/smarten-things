@@ -91,6 +91,14 @@ During an explicit local consent attempt, diagnostics return the fixed
 No HTTP method, path, body or parameter can trigger consent; the local OS-owner
 signal path is documented in [setup](SETUP.md).
 
+A non-prompting authorization check that exceeds five seconds returns preflight
+state `timed_out` and reason `automation_check_timed_out`. Task routes return 503
+without an item Apple Event. The native probe stays in the same process, with
+at most one outstanding call; requests do not queue more checks behind a stall.
+This state does not mean permission was denied or that the project is missing.
+It cannot trigger the local consent flow, which still requires an observed
+`consent_required` result and explicit owner action.
+
 Task-route 503 responses can additionally include a fixed `reason`, distinguishing
 Automation consent/denial/unavailability, app/session prerequisites, dictionary
 support, object lookup, timeouts, execution, and invalid/oversized output. Unknown

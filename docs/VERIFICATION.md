@@ -1,5 +1,33 @@
 # Verification
 
+## Bounded authorization candidate — 2026-11-15
+
+The local native authorization check stalled before any item request. Both the
+Python binding and a small native C control using Apple's SDK declarations
+stalled inside `AEDeterminePermissionToAutomateTarget` with prompting disabled.
+Bundle-ID and verified-process-ID addressing, and a worker with a main run loop,
+did not produce an authorization result within their diagnostic deadlines.
+App discovery found one fully launched standard Things instance; session metadata
+confirmed a logged-in, on-console session but did not establish screen-lock state.
+This does not establish the cause of the earlier item-event
+timeouts or project placement failure.
+
+The source now gives non-prompting authorization checks a five-second caller
+deadline in the same process. One outstanding daemon probe is permitted, without
+automatic retry or queuing behind a stall. Late grants are discarded; late
+denials still latch for their event type, preserving reads after a write denial.
+The binding also matches the SDK's two-byte-packed `AEDesc` layout.
+
+All 161 synthetic tests passed. In a separate read-only loopback instance,
+diagnostics returned `automation_check_timed_out` in 5.013 seconds without reading
+tasks. Health still responded in 0.001 seconds with writes disabled, and the
+exact QA-project request failed closed with 503 in 0.001 seconds. No native task
+read or mutation was attempted because authorization remained unknown. Native
+create/edit/move/replay/reconciliation acceptance is still untested. The existing
+private database/WAL backup hashes matched, and a reconstructed private copy
+passed integrity checks before diagnostics. No runtime or production journal
+was changed, and no branch was pushed.
+
 ## Recovery candidate — 2026-11-14
 
 The 2.3.0 candidate adds exact-ID task moves and known-ID reconciliation through

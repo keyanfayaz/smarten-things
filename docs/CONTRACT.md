@@ -83,7 +83,11 @@ No tasks are replayed or cached on reconnect; clients must explicitly request ag
 
 Startup, HTTP/MCP calls and task reads never prompt for Automation consent. The
 service does not launch Things or repair permissions. A non-prompting public API
-checks access first. A denial latches for
+checks access first, on a daemon worker in the same service process. A non-prompting
+check has a five-second caller deadline. A stalled native call remains the only
+outstanding probe; subsequent requests fail closed without starting more probes
+or sending task events. A late grant is not reused, and a late denial still
+latches for its event type. A denial latches for
 that service process; restart only after user authorization. There are no read
 retries. Raw AppleScript diagnostics and tracebacks are suppressed. Health never
 reads tasks or establishes live access. The task-free doctor remains separate.
