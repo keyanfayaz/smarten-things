@@ -16,7 +16,12 @@ Move one selected open task to an existing open project using a separate
 `operation: move` proposal containing only `task_id` and `project_id`. Both exact
 snapshots are bound to the review and rechecked before the documented project
 property assignment. Task fields are preserved and verified afterward.
-An empty notes string clears notes; a null deadline clears the deadline.
+Creating a task in a project uses one make in Inbox, captures its ID, then assigns
+its project explicitly. Native testing found the make-container form left the task
+in Inbox on the tested installation. Failure after make retains the known ID
+when available and stays uncertain; it never creates a replacement.
+An empty notes string clears notes. Clearing a deadline is unsupported and
+`deadline: null` is rejected before a proposal or mutation.
 Omitted fields are preserved. Notes preserve multiline Unicode text and are
 bounded to 8,192 characters and 16,384 UTF-8 bytes. Exact-item reads use schema 2
 and include notes/deadline so previews and stale checks bind all reviewed fields.
@@ -25,7 +30,7 @@ recurrence editing, calendars or automatic startup is implemented. Do not select
 repeating task templates: the public reader cannot inspect recurrence and that
 use is unverified. Start days are literal YYYY-MM-DD calendar days in the Mac's
 local time zone, not UTC instants. Start day and deadline are distinct.
-Clearing a start day is unsupported.
+Clearing a start day is also unsupported.
 
 ## Local authorization and lifecycle
 
@@ -90,6 +95,9 @@ with its own exact move preview and fresh owner approval; moving it does not
 clear the original uncertainty. Correct any other differences through separately
 reviewed updates. Never create a replacement, guess by title, retry the original
 apply, or delete/reset journal records.
+If correction needs an unsupported operation such as deadline removal, the owner
+must correct that exact task in Things before verification can succeed. The API
+cannot clear the uncertainty without a matching read-back.
 
 Once the known task matches the original proposal, preview
 `{"operation":"reconcile","task_id":"synthetic-task","original_proposal_id":"synthetic-proposal"}`

@@ -86,7 +86,7 @@ class DurableChanges(unittest.TestCase):
         self.error('preview_payload_mismatch', self.engine.apply, proposal['proposal_id'], {'payload_digest': proposal['payload_digest'], 'change': changed})
         self.writer.assert_not_called()
 
-    def test_create_with_notes_and_both_dates_then_update_and_clear(self):
+    def test_create_with_notes_and_both_dates_then_clear_notes_preserving_dates(self):
         proposal = self.engine.preview({'operation': 'create', 'title': 'Synthetic creation',
             'notes': 'First line\nSecond line — café 🗓', 'start_date': '2028-02-29', 'deadline': '2028-03-05'})
         self.assertEqual(proposal['after']['notes'], proposal['change']['notes'])
@@ -95,11 +95,11 @@ class DurableChanges(unittest.TestCase):
         self.assertEqual(result['notes'], proposal['change']['notes'])
         self.assertEqual(result['scheduled_date'], '2028-02-29')
         self.assertEqual(result['deadline'], '2028-03-05')
-        clear = self.engine.preview({'operation': 'update', 'task_id': result['id'], 'notes': '', 'deadline': None})
+        clear = self.engine.preview({'operation': 'update', 'task_id': result['id'], 'notes': ''})
         self.assertEqual(clear['before']['deadline'], '2028-03-05')
         observed = self.apply(clear)['result']['readback']['item']
         self.assertEqual(observed['notes'], '')
-        self.assertIsNone(observed['deadline'])
+        self.assertEqual(observed['deadline'], '2028-03-05')
         self.assertEqual(observed['scheduled_date'], '2028-02-29')
         self.assertEqual(observed['title'], 'Synthetic creation')
 
@@ -121,11 +121,22 @@ class DurableChanges(unittest.TestCase):
         self.writer.assert_not_called()
 
     def test_changed_notes_or_deadline_cannot_replace_reviewed_payload(self):
-        for extra in ({'notes': 'Different'}, {'deadline': None}):
+        for extra in ({'notes': 'Different'}, {'deadline': '2028-03-06'}):
             proposal = self.engine.preview({'operation': 'update', 'task_id': 'synthetic-task',
                 'notes': 'Reviewed description', 'deadline': '2028-03-05'})
             self.error('preview_payload_mismatch', self.engine.apply, proposal['proposal_id'],
                 {'payload_digest': proposal['payload_digest'], 'change': dict(proposal['change'], **extra)})
+        self.writer.assert_not_called()
+
+    def test_deadline_clear_fails_before_reading_claiming_or_changing_notes(self):
+        change = {'operation': 'update', 'task_id': 'synthetic-task', 'notes': 'Must not apply', 'deadline': None}
+        self.error('deadline_clear_unsupported', self.engine.preview, change)
+        self.lookup.assert_not_called()
+        # A pending proposal from an older runtime must also remain unclaimed.
+        bound = {'change': change, 'baseline': self.records['synthetic-task'], 'context': self.context}
+        old = self.journal.create('synthetic-owner', bound, self.now)
+        self.error('deadline_clear_unsupported', self.engine.apply, old['id'], {'payload_digest': old['digest'], 'change': change})
+        self.assertEqual(self.engine.status(old['id'])['state'], 'pending')
         self.writer.assert_not_called()
 
     def test_unverified_notes_deadline_or_unintended_change_is_uncertain(self):

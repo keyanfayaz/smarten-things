@@ -1,5 +1,41 @@
 # Verification
 
+## Native QA after owner authorization — 2026-11-15
+
+After the owner manually approved a pending macOS Automation dialog, the bounded
+read and write checks returned granted and exact QA-project reads responded.
+The existing private database/WAL backup was reverified, and scoped baselines
+were saved before mutations. A fresh private loopback journal and credentials
+restricted the harness to an isolated QA area, two QA projects and the exact IDs
+returned by its two creates. No personal tasks or production journal were changed.
+
+| Native case | Observed result |
+| --- | --- |
+| Original create into project | Task returned a known ID but had neither project nor area; journal remained uncertain |
+| Explicit project assignment | Moved that exact QA task successfully; separate reconciliation preserved the original uncertain row |
+| Revised project create | One make in Inbox followed by explicit project assignment passed read-back; ID retained before assignment |
+| Title, multiline Unicode notes, start day and deadline setting | Passed; omitted fields remained unchanged |
+| Move between QA projects | Same exact task ID moved successfully; both projects belonged to the QA area |
+| Stale review and repeated apply | Rejected without another mutation or duplicate |
+| Injected uncertain update | New creates blocked; exact-ID reconciliation added a verification link without a native write or rewriting the original row |
+| Empty notes | Cleared while preserving both dates and project |
+| Deadline removal | Not verified: missing-value assignment left the old deadline, empty-text assignment returned uncertain, and bulk-property assignment did not verify removal |
+
+Production now rejects `deadline: null` with `deadline_clear_unsupported` before
+reading, claiming a proposal or changing notes; the native script independently
+rejects it before mutation. It no longer advertises deadline removal. The three
+failed QA removal proposals remain uncertain and unreconciled, keeping creates
+blocked in that QA journal. No blanket clear, rollback, retry or deletion occurred.
+The original uncertain production operation was not accessed or changed.
+
+Final exact-ID inspection found precisely two known QA tasks across the two QA
+projects, without duplicates; both had the correct project-area ancestry. QA
+fixtures and journal remain privately for review. The observed create-container
+failure does not establish why the documented syntax was ignored by this app.
+The explicit assignment path is verified on this installed Things 3.24.1 host.
+The complete synthetic suite passes 164 tests, and all fixed scripts compile.
+No push, deployment, hosted plugin refresh or cross-device acceptance was done.
+
 ## Bounded authorization candidate — 2026-11-15
 
 The local native authorization check stalled before any item request. Both the

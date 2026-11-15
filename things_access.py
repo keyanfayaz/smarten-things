@@ -14,6 +14,7 @@ def _native_permission_status(request=False, *, event_class=b"core", event_id=b"
 
         class Desc(ctypes.Structure):
             # Apple's AEDataModel.h declares AEDesc under #pragma pack(push, 2).
+            _layout_ = "ms"
             _pack_ = 2
             _fields_ = [("descriptorType", ctypes.c_uint32), ("dataHandle", ctypes.c_void_p)]
 

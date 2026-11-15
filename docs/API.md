@@ -167,7 +167,8 @@ result contains the verified read-back and original proposal ID. See the
 [reconciliation workflow](PREVIEWS.md#reconcile-an-uncertain-operation).
 
 `notes` is the task description. Multiline Unicode text is preserved; an empty
-string clears it. `deadline` is a local YYYY-MM-DD due day; null clears it.
+string clears it. `deadline` is a local YYYY-MM-DD due day. Production rejects
+null with `deadline_clear_unsupported` before claiming or mutating a proposal.
 `start_date` is a separate local calendar start day, and cannot be cleared by
 this interface. Omitted fields are preserved on updates. Neither date field accepts
 natural-language or datetime strings. Updates require at least one changed field.

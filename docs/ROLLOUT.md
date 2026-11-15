@@ -70,10 +70,11 @@ previews must be regenerated. At that deployment checkpoint the write tools did
 not support task moves, completion/deletion, bulk changes, recurrence or checklists.
 
 The 2.3.0 source candidate adds exact-ID task moves and separately approved
-known-ID reconciliation, preserving the original uncertain record. It has not
-been installed by this change. Project creation placement remains unchanged:
-the documented `make ... at beginning of project` syntax alone does not establish
-the cause of a placement failure. Native exact-item reads must work before live
-create/move/update/reconciliation acceptance can proceed. Task-free fixtures now
-exercise project snapshot checks as well as field assignment; application behavior
-still requires the isolated live test project. See [PREVIEWS.md](PREVIEWS.md).
+known-ID reconciliation, preserving the original uncertain record. After the
+owner approved the pending macOS dialog, native acceptance reproduced the
+project-create placement failure and verified explicit project assignment as the
+fix. Create, edit, date setting, inter-project move, stale/replay rejection and
+reconciliation passed in isolated QA. Deadline removal failed native verification
+and is now rejected before mutation. This candidate has not been installed;
+production recovery and hosted client acceptance remain separate release gates.
+See [native evidence](VERIFICATION.md) and [scope](PREVIEWS.md).

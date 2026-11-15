@@ -67,7 +67,7 @@ class NativeTaskFieldTests(unittest.TestCase):
     is used. Native application behavior remains a separate live acceptance test.
     """
     def run_native(self, change, *, baseline_notes='Original description', initial_deadline=None, initial_start=None,
-                   destination_title='Synthetic title'):
+                   destination_title='Synthetic title', fail_project_assignment=False):
         script = Path(__file__).resolve().parents[1]/'src/write_task.applescript'
         source = script.read_text()
         source = source.replace('    set change to request\'s objectForKey:"change"', '''    set fixtureFormatter to current application's NSISO8601DateFormatter's alloc()'s init()
@@ -88,8 +88,8 @@ class NativeTaskFieldTests(unittest.TestCase):
         source = source.replace('set taskRef to make new to do with properties {name:(newTitle as text)} at beginning of list id "TMInboxListSource"', 'set taskRef to syntheticTask\n                        set name of taskRef to (newTitle as text)')
         source = source.replace('set destinationRef to project id (destinationID as text)', 'set destinationRef to syntheticProject')
         source = source.replace('set destinationRef to project id ((change\'s objectForKey:"project_id") as text)', 'set destinationRef to syntheticProject')
-        source = source.replace('set taskRef to make new to do with properties {name:(newTitle as text)} at beginning of destinationRef',
-                                'set taskRef to syntheticTask\n                        set name of taskRef to (newTitle as text)\n                        set |project| of taskRef to syntheticProject')
+        if fail_project_assignment:
+            source = source.replace('set project of taskRef to destinationRef', 'error "Synthetic assignment failure"')
         source = source.replace('schedule taskRef for startDay', 'set |activation date| of taskRef to startDay')
         for field in ('status', 'notes', 'project', 'activation date', 'due date', 'modification date'):
             for reference in ('taskRef', 'itemRef'):
@@ -141,13 +141,22 @@ class NativeTaskFieldTests(unittest.TestCase):
         self.assertEqual(observed, {'title': 'Synthetic title', 'notes': change['notes'],
                                    'start_date': change['start_date'], 'deadline': change['deadline'], 'project_id': None})
 
-    def test_native_empty_notes_and_null_deadline(self):
-        result = self.run_native({'operation': 'update', 'task_id': 'synthetic-task', 'notes': '', 'deadline': None},
+    def test_native_empty_notes_preserves_deadline(self):
+        result = self.run_native({'operation': 'update', 'task_id': 'synthetic-task', 'notes': ''},
                                  initial_deadline='2028-03-05', initial_start='2028-02-29')
         self.assertEqual(result['outcome'], 'applied')
         self.assertEqual(result['fixture_observed']['notes'], '')
-        self.assertIsNone(result['fixture_observed']['deadline'])
+        self.assertEqual(result['fixture_observed']['deadline'], '2028-03-05')
         self.assertEqual(result['fixture_observed']['start_date'], '2028-02-29')
+
+    def test_native_null_deadline_is_rejected_before_any_mutation(self):
+        result = self.run_native({'operation': 'update', 'task_id': 'synthetic-task', 'notes': '', 'deadline': None},
+                                 initial_deadline='2028-03-05')
+        self.assertEqual(result['outcome'], 'not_started')
+        self.assertIsNone(result['id'])
+        with self.assertRaises(ChangeError) as caught:
+            normalize_write_change({'operation': 'update', 'task_id': 'synthetic-task', 'notes': '', 'deadline': None})
+        self.assertEqual(caught.exception.reason, 'deadline_clear_unsupported')
 
     def test_native_notes_only_preserves_both_dates(self):
         result = self.run_native({'operation': 'update', 'task_id': 'synthetic-task', 'notes': 'New notes'},
@@ -192,6 +201,12 @@ class NativeTaskFieldTests(unittest.TestCase):
                                  'project_id': 'synthetic-project'}, destination_title='Stale project')
         self.assertEqual(result['outcome'], 'not_started')
         self.assertIsNone(result['id'])
+
+    def test_native_project_assignment_failure_retains_the_created_id(self):
+        result = self.run_native({'operation': 'create', 'title': 'Synthetic partial create',
+                                  'project_id': 'synthetic-project'}, fail_project_assignment=True)
+        self.assertEqual(result['outcome'], 'uncertain')
+        self.assertEqual(result['id'], 'synthetic-task')
 
 
 if __name__ == '__main__':

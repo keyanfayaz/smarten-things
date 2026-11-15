@@ -85,7 +85,10 @@ def normalize_write_change(value):
         if set(value) != fields or any(not valid_id(value[field]) for field in fields - {"operation"}):
             raise ChangeError("invalid_change")
         return copy.deepcopy(value)
-    return normalize_change(value)
+    change = normalize_change(value)
+    if "deadline" in change and change["deadline"] is None:
+        raise ChangeError("deadline_clear_unsupported")
+    return change
 
 
 def digest(value):
