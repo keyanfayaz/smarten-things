@@ -202,6 +202,7 @@ installer never rotates or overwrites a token automatically.
 | -10827 | App launch/discovery failed; it is not proof of a permission denial |
 | -1728 | App/object lookup failed; Upcoming or a removed project can be unavailable; do not return invented empty data |
 | Timeout/-1712 | Stop this read; confirm Things is responsive before a new explicit request |
+| `automation_check_timed_out` | The OS authorization query did not finish; no item event was sent. Ask the owner to inspect the local Automation state or pending OS dialog; do not infer denial, grant, or an empty project |
 | 401 | Check the backend credential file; no token in URL/browser/shell |
 | 403 | Origin requests are forbidden; use backend-to-backend access and exact approved Host |
 | 429 | Another bounded read is active; let it finish, then explicitly refresh |

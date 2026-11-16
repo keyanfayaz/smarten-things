@@ -86,7 +86,7 @@ class DurableChanges(unittest.TestCase):
         self.error('preview_payload_mismatch', self.engine.apply, proposal['proposal_id'], {'payload_digest': proposal['payload_digest'], 'change': changed})
         self.writer.assert_not_called()
 
-    def test_create_with_notes_and_both_dates_then_update_and_clear(self):
+    def test_create_with_notes_and_both_dates_then_clear_notes_preserving_dates(self):
         proposal = self.engine.preview({'operation': 'create', 'title': 'Synthetic creation',
             'notes': 'First line\nSecond line — café 🗓', 'start_date': '2028-02-29', 'deadline': '2028-03-05'})
         self.assertEqual(proposal['after']['notes'], proposal['change']['notes'])
@@ -95,11 +95,11 @@ class DurableChanges(unittest.TestCase):
         self.assertEqual(result['notes'], proposal['change']['notes'])
         self.assertEqual(result['scheduled_date'], '2028-02-29')
         self.assertEqual(result['deadline'], '2028-03-05')
-        clear = self.engine.preview({'operation': 'update', 'task_id': result['id'], 'notes': '', 'deadline': None})
+        clear = self.engine.preview({'operation': 'update', 'task_id': result['id'], 'notes': ''})
         self.assertEqual(clear['before']['deadline'], '2028-03-05')
         observed = self.apply(clear)['result']['readback']['item']
         self.assertEqual(observed['notes'], '')
-        self.assertIsNone(observed['deadline'])
+        self.assertEqual(observed['deadline'], '2028-03-05')
         self.assertEqual(observed['scheduled_date'], '2028-02-29')
         self.assertEqual(observed['title'], 'Synthetic creation')
 
@@ -121,11 +121,22 @@ class DurableChanges(unittest.TestCase):
         self.writer.assert_not_called()
 
     def test_changed_notes_or_deadline_cannot_replace_reviewed_payload(self):
-        for extra in ({'notes': 'Different'}, {'deadline': None}):
+        for extra in ({'notes': 'Different'}, {'deadline': '2028-03-06'}):
             proposal = self.engine.preview({'operation': 'update', 'task_id': 'synthetic-task',
                 'notes': 'Reviewed description', 'deadline': '2028-03-05'})
             self.error('preview_payload_mismatch', self.engine.apply, proposal['proposal_id'],
                 {'payload_digest': proposal['payload_digest'], 'change': dict(proposal['change'], **extra)})
+        self.writer.assert_not_called()
+
+    def test_deadline_clear_fails_before_reading_claiming_or_changing_notes(self):
+        change = {'operation': 'update', 'task_id': 'synthetic-task', 'notes': 'Must not apply', 'deadline': None}
+        self.error('deadline_clear_unsupported', self.engine.preview, change)
+        self.lookup.assert_not_called()
+        # A pending proposal from an older runtime must also remain unclaimed.
+        bound = {'change': change, 'baseline': self.records['synthetic-task'], 'context': self.context}
+        old = self.journal.create('synthetic-owner', bound, self.now)
+        self.error('deadline_clear_unsupported', self.engine.apply, old['id'], {'payload_digest': old['digest'], 'change': change})
+        self.assertEqual(self.engine.status(old['id'])['state'], 'pending')
         self.writer.assert_not_called()
 
     def test_unverified_notes_deadline_or_unintended_change_is_uncertain(self):
@@ -294,6 +305,21 @@ class ScopedHTTPTests(unittest.TestCase):
                 self.assertEqual(applied['result']['readback']['item']['deadline'], change['deadline'])
                 self.assertEqual(call('get_things_change_status', {'proposal_id': proposal['proposal_id']})['state'], 'applied')
                 self.assertEqual(self.writer.call_count, 1)
+                move = call('preview_things_task_change', {'operation': 'move', 'task_id': 'synthetic-task',
+                                                         'project_id': 'synthetic-project'})
+                arguments = {key: move[key] for key in ('proposal_id', 'payload_digest', 'change')}
+                self.assertEqual(call('apply_things_task_change', arguments)['result']['readback']['item']['project']['id'],
+                                 'synthetic-project')
+                # Simulate a completed event whose response could not be verified.
+                with self.journal.connect() as db:
+                    db.execute("UPDATE operations SET state='uncertain' WHERE id=?", (move['proposal_id'],))
+                recovery = call('preview_things_task_change', {'operation': 'reconcile', 'task_id': 'synthetic-task',
+                    'original_proposal_id': move['proposal_id']})
+                arguments = {key: recovery[key] for key in ('proposal_id', 'payload_digest', 'change')}
+                self.assertEqual(call('apply_things_task_change', arguments)['state'], 'applied')
+                self.assertEqual(call('get_things_change_status', {'proposal_id': move['proposal_id']})['reconciled_by'],
+                                 recovery['proposal_id'])
+                self.assertEqual(self.writer.call_count, 2)
         finally:
             server.shutdown(); server.server_close(); thread.join(timeout=2)
 
@@ -355,6 +381,197 @@ class ScopedHTTPTests(unittest.TestCase):
             self.assertFalse(server.local_write_enable_requested)
         finally: server.server_close()
         with self.assertRaises(ValueError): service.Server(('127.0.0.1',0),token,reader=Mock(),write_token=token,changes=self.engine)
+
+
+class RecoveryTests(unittest.TestCase):
+    setUp = DurableChanges.setUp
+    make_engine = DurableChanges.make_engine
+    write = DurableChanges.write
+    apply = DurableChanges.apply
+    error = DurableChanges.error
+
+    def uncertain_create(self):
+        proposal = self.engine.preview({'operation': 'create', 'title': 'Synthetic creation',
+            'project_id': 'synthetic-project', 'notes': 'Synthetic notes'})
+        def misplaced(bound):
+            result = self.write(bound)
+            self.records[result['id']]['item']['project'] = None
+            return result
+        self.writer.side_effect = misplaced
+        self.error('write_outcome_uncertain_no_retry_check_status', self.apply, proposal)
+        self.writer.side_effect = self.write
+        return proposal
+
+    def move(self, key='synthetic-created'):
+        return self.engine.preview({'operation': 'move', 'task_id': key, 'project_id': 'synthetic-project'})
+
+    def reconcile(self, original, key='synthetic-created'):
+        return self.engine.preview({'operation': 'reconcile', 'task_id': key,
+                                    'original_proposal_id': original['proposal_id']})
+
+    def test_move_then_reconcile_preserves_original_history_and_single_use_after_restart(self):
+        original = self.uncertain_create()
+        history = self.journal.get(original['proposal_id'], 'synthetic-owner')
+        self.error('reconciliation_state_mismatch', self.reconcile, original)
+        move = self.move()
+        self.assertIsNone(move['before']['project'])
+        self.assertEqual(move['after']['project_id'], 'synthetic-project')
+        self.assertEqual(move['destination']['item']['id'], 'synthetic-project')
+        self.assertEqual(self.apply(move)['state'], 'applied')
+        self.assertTrue(self.journal.unresolved())
+        self.error('unresolved_operation_requires_owner_reconciliation', self.engine.preview,
+                   {'operation': 'create', 'title': 'Still blocked'})
+        proposal = self.reconcile(original)
+        self.assertEqual(proposal['before']['id'], proposal['after']['id'])
+        self.assertIn('no Things mutation', proposal['effect'])
+        calls = self.writer.call_count
+        self.assertEqual(self.apply(proposal)['result']['original_proposal_id'], original['proposal_id'])
+        self.assertEqual(self.writer.call_count, calls)
+        self.assertFalse(self.journal.unresolved())
+        self.assertEqual(self.journal.get(original['proposal_id'], 'synthetic-owner'), history)
+        status = self.engine.status(original['proposal_id'])
+        self.assertEqual(status['state'], 'uncertain')
+        self.assertEqual(status['reconciled_by'], proposal['proposal_id'])
+        self.journal.close(); self.journal = Journal(self.directory); self.engine = self.make_engine()
+        self.assertFalse(self.journal.unresolved())
+        self.assertEqual(self.engine.status(original['proposal_id']), status)
+        self.error('preview_already_used_check_status', self.apply, original)
+        self.error('preview_already_used_check_status', self.apply, move)
+        self.error('preview_already_used_check_status', self.apply, proposal)
+        self.error('operation_already_reconciled', self.reconcile, original)
+        self.engine.preview({'operation': 'create', 'title': 'Unblocked'})
+
+    def test_move_rechecks_complete_task_destination_and_context_before_writer(self):
+        for target, field, value in [('synthetic-task', 'notes', 'Concurrent notes'),
+                                     ('synthetic-project', 'title', 'Concurrent project'),
+                                     ('synthetic-project', 'modified_at', '2026-10-30T01:02:03Z')]:
+            proposal = self.move('synthetic-task')
+            self.records[target]['item'][field] = value
+            self.error('preview_stale', self.apply, proposal)
+        proposal = self.move('synthetic-task')
+        self.context['time_zone'] = 'UTC'
+        self.error('preview_stale', self.apply, proposal)
+        self.writer.assert_not_called()
+
+    def test_wrong_move_destination_or_other_field_readback_is_uncertain(self):
+        for field, value in [('project', {'id': 'wrong-project', 'title': 'Other'}),
+                             ('notes', 'Unexpected edit'), ('scheduled_date', '2028-02-29')]:
+            proposal = self.move('synthetic-task')
+            def wrong(bound):
+                result = self.write(bound)
+                self.records[result['id']]['item'][field] = value
+                return result
+            self.writer.side_effect = wrong
+            self.error('write_outcome_uncertain_no_retry_check_status', self.apply, proposal)
+            self.assertTrue(self.journal.unresolved())
+            self.error('preview_already_used_check_status', self.apply, proposal)
+
+    def test_partial_move_failure_never_retries_or_unblocks(self):
+        original = self.uncertain_create()
+        proposal = self.move()
+        def partial(bound):
+            self.write(bound)
+            return {'outcome': 'uncertain', 'id': 'synthetic-created'}
+        self.writer.side_effect = partial
+        self.error('write_outcome_uncertain_no_retry_check_status', self.apply, proposal)
+        self.assertEqual(self.engine.status(proposal['proposal_id'])['result'], {'id': 'synthetic-created'})
+        self.error('preview_already_used_check_status', self.apply, proposal)
+        self.apply(self.reconcile(original))
+        self.assertTrue(self.journal.unresolved())  # the move has its own unresolved record
+        self.apply(self.reconcile(proposal))
+        self.assertFalse(self.journal.unresolved())
+
+    def test_reconcile_rejects_unknown_wrong_id_other_owner_or_nonuncertain_record(self):
+        original = self.uncertain_create()
+        self.error('reconciliation_requires_exact_known_id', self.reconcile, original, 'synthetic-task')
+        original_state = self.journal.get(original['proposal_id'], 'synthetic-owner')
+        other = ChangeService(self.journal, 'another-owner', self.lookup, self.lookup, self.writer,
+                              lambda action: action(), lambda: self.context)
+        self.error('preview_expired_or_unknown', other.preview,
+                   {'operation': 'reconcile', 'task_id': 'synthetic-created', 'original_proposal_id': original['proposal_id']})
+        pending = self.move()
+        self.error('reconciliation_requires_exact_known_id', self.reconcile, pending)
+        with self.journal.connect() as db:
+            db.execute('UPDATE operations SET result=NULL WHERE id=?', (original['proposal_id'],))
+        self.error('reconciliation_requires_exact_known_id', self.reconcile, original)
+        self.assertTrue(self.journal.unresolved())
+        self.assertEqual(self.journal.get(original['proposal_id'], 'synthetic-owner')['bound'], original_state['bound'])
+
+    def test_stale_expired_or_changed_reconciliation_cannot_unblock(self):
+        original = self.uncertain_create(); self.apply(self.move())
+        proposal = self.reconcile(original)
+        self.records['synthetic-created']['item']['modified_at'] = '2026-10-30T01:02:03Z'
+        self.error('preview_stale', self.apply, proposal)
+        proposal = self.reconcile(original)
+        altered = dict(proposal['change'], task_id='synthetic-task')
+        self.error('preview_payload_mismatch', self.engine.apply, proposal['proposal_id'],
+                   {'change': altered, 'payload_digest': proposal['payload_digest']})
+        self.now += REVIEW_TTL_SECONDS + 1
+        self.error('preview_expired_or_unknown', self.apply, proposal)
+        self.assertTrue(self.journal.unresolved())
+        self.assertIsNone(self.engine.status(original['proposal_id'])['reconciled_by'])
+
+    def test_old_journal_upgrade_preserves_uncertain_record_and_original_expiry(self):
+        original = self.uncertain_create()
+        history = self.journal.get(original['proposal_id'], 'synthetic-owner')
+        with self.journal.connect() as db: db.execute('DROP TABLE reconciliations')
+        self.journal.close(); self.journal = Journal(self.directory); self.engine = self.make_engine()
+        self.assertEqual(self.journal.get(original['proposal_id'], 'synthetic-owner'), history)
+        self.assertTrue(self.journal.unresolved())
+        self.assertIsNone(self.engine.status(original['proposal_id'])['reconciled_by'])
+
+    def test_two_reconciliation_reviews_can_only_link_original_once(self):
+        original = self.uncertain_create(); self.apply(self.move())
+        first, second = self.reconcile(original), self.reconcile(original)
+        self.apply(first)
+        self.error('operation_already_reconciled', self.apply, second)
+        self.assertEqual(self.engine.status(second['proposal_id'])['state'], 'pending')
+        self.assertEqual(self.engine.status(original['proposal_id'])['reconciled_by'], first['proposal_id'])
+
+    def test_unknown_id_uncertainty_cannot_be_cleared_by_reconciling_another_record(self):
+        second = self.engine.preview({'operation': 'create', 'title': 'Synthetic unknown ID'})
+        original = self.uncertain_create(); self.apply(self.move())
+        self.journal.transition(second['proposal_id'], 'synthetic-owner', 'pending', 'in_flight')
+        self.journal.close(); self.journal = Journal(self.directory); self.engine = self.make_engine()
+        self.apply(self.reconcile(original))
+        self.assertTrue(self.journal.unresolved())
+        self.error('unresolved_operation_requires_owner_reconciliation', self.engine.preview,
+                   {'operation': 'create', 'title': 'Must remain blocked'})
+
+    def test_reconciliation_commit_is_atomic_and_other_uncertainty_still_blocks(self):
+        original = self.uncertain_create(); self.apply(self.move())
+        proposal = self.reconcile(original)
+        with self.journal.connect() as db:
+            db.execute("CREATE TRIGGER synthetic_fail BEFORE INSERT ON reconciliations BEGIN SELECT RAISE(ABORT, 'synthetic'); END")
+        with self.assertRaises(sqlite3.IntegrityError): self.apply(proposal)
+        self.assertTrue(self.journal.unresolved())
+        self.assertEqual(self.engine.status(proposal['proposal_id'])['state'], 'pending')
+        with self.journal.connect() as db: db.execute('DROP TRIGGER synthetic_fail')
+        # No native event was attempted, so the exact still-pending review can commit.
+        self.apply(proposal)
+        self.assertEqual(self.writer.call_count, 2)
+
+    def test_writer_change_error_is_uncertain_and_known_id_survives_interruption(self):
+        proposal = self.move('synthetic-task')
+        self.writer.side_effect = ChangeError('synthetic_failure')
+        self.error('write_outcome_uncertain_no_retry_check_status', self.apply, proposal)
+        self.assertEqual(self.engine.status(proposal['proposal_id'])['state'], 'uncertain')
+        self.assertEqual(self.engine.status(proposal['proposal_id'])['result'], {'id': 'synthetic-task'})
+        second = self.move('synthetic-task')
+        self.journal.transition(second['proposal_id'], 'synthetic-owner', 'pending', 'in_flight')
+        self.journal.remember_id(second['proposal_id'], 'synthetic-owner', 'synthetic-task')
+        self.journal.close(); self.journal = Journal(self.directory); self.engine = self.make_engine()
+        self.assertEqual(self.engine.status(second['proposal_id'])['result'], {'id': 'synthetic-task'})
+        self.assertTrue(self.journal.unresolved())
+
+    def test_create_without_start_date_rejects_unintended_schedule(self):
+        proposal = self.engine.preview({'operation': 'create', 'title': 'Synthetic creation'})
+        def scheduled(bound):
+            result = self.write(bound)
+            self.records[result['id']]['item']['scheduled_date'] = '2028-02-29'
+            return result
+        self.writer.side_effect = scheduled
+        self.error('write_outcome_uncertain_no_retry_check_status', self.apply, proposal)
 
 
 class NativeBoundaryTests(unittest.TestCase):

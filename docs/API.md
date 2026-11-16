@@ -91,6 +91,14 @@ During an explicit local consent attempt, diagnostics return the fixed
 No HTTP method, path, body or parameter can trigger consent; the local OS-owner
 signal path is documented in [setup](SETUP.md).
 
+A non-prompting authorization check that exceeds five seconds returns preflight
+state `timed_out` and reason `automation_check_timed_out`. Task routes return 503
+without an item Apple Event. The native probe stays in the same process, with
+at most one outstanding call; requests do not queue more checks behind a stall.
+This state does not mean permission was denied or that the project is missing.
+It cannot trigger the local consent flow, which still requires an observed
+`consent_required` result and explicit owner action.
+
 Task-route 503 responses can additionally include a fixed `reason`, distinguishing
 Automation consent/denial/unavailability, app/session prerequisites, dictionary
 support, object lookup, timeouts, execution, and invalid/oversized output. Unknown
@@ -143,8 +151,24 @@ updates or optional project_id for creation. Apply accepts exactly payload_diges
 and the unchanged change object. There is no approval boolean. The trusted
 assistant/host must obtain a fresh owner reply before submitting apply.
 
+Production previews also accept exactly these shapes:
+
+```json
+{"operation":"move","task_id":"synthetic-task","project_id":"synthetic-project"}
+{"operation":"reconcile","task_id":"synthetic-task","original_proposal_id":"synthetic-proposal"}
+```
+
+Moves bind both the task and destination project. Reconciliation verifies only
+the original journal's known task ID against its original desired outcome; it
+does not mutate Things. Both require a new exact preview and fresh per-item
+approval before the existing apply route. Status retains the original uncertain
+state/result and adds `reconciled_by` (null until verified). That proposal's
+result contains the verified read-back and original proposal ID. See the
+[reconciliation workflow](PREVIEWS.md#reconcile-an-uncertain-operation).
+
 `notes` is the task description. Multiline Unicode text is preserved; an empty
-string clears it. `deadline` is a local YYYY-MM-DD due day; null clears it.
+string clears it. `deadline` is a local YYYY-MM-DD due day. Production rejects
+null with `deadline_clear_unsupported` before claiming or mutating a proposal.
 `start_date` is a separate local calendar start day, and cannot be cleared by
 this interface. Omitted fields are preserved on updates. Neither date field accepts
 natural-language or datetime strings. Updates require at least one changed field.

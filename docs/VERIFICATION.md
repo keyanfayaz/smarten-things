@@ -1,5 +1,96 @@
 # Verification
 
+## Native QA after owner authorization — 2026-11-15
+
+After the owner manually approved a pending macOS Automation dialog, the bounded
+read and write checks returned granted and exact QA-project reads responded.
+The existing private database/WAL backup was reverified, and scoped baselines
+were saved before mutations. A fresh private loopback journal and credentials
+restricted the harness to an isolated QA area, two QA projects and the exact IDs
+returned by its two creates. No personal tasks or production journal were changed.
+
+| Native case | Observed result |
+| --- | --- |
+| Original create into project | Task returned a known ID but had neither project nor area; journal remained uncertain |
+| Explicit project assignment | Moved that exact QA task successfully; separate reconciliation preserved the original uncertain row |
+| Revised project create | One make in Inbox followed by explicit project assignment passed read-back; ID retained before assignment |
+| Title, multiline Unicode notes, start day and deadline setting | Passed; omitted fields remained unchanged |
+| Move between QA projects | Same exact task ID moved successfully; both projects belonged to the QA area |
+| Stale review and repeated apply | Rejected without another mutation or duplicate |
+| Injected uncertain update | New creates blocked; exact-ID reconciliation added a verification link without a native write or rewriting the original row |
+| Empty notes | Cleared while preserving both dates and project |
+| Deadline removal | Not verified: missing-value assignment left the old deadline, empty-text assignment returned uncertain, and bulk-property assignment did not verify removal |
+
+Production now rejects `deadline: null` with `deadline_clear_unsupported` before
+reading, claiming a proposal or changing notes; the native script independently
+rejects it before mutation. It no longer advertises deadline removal. The three
+failed QA removal proposals remain uncertain and unreconciled, keeping creates
+blocked in that QA journal. No blanket clear, rollback, retry or deletion occurred.
+The original uncertain production operation was not accessed or changed.
+
+Final exact-ID inspection found precisely two known QA tasks across the two QA
+projects, without duplicates; both had the correct project-area ancestry. QA
+fixtures and journal remain privately for review. The observed create-container
+failure does not establish why the documented syntax was ignored by this app.
+The explicit assignment path is verified on this installed Things 3.24.1 host.
+The complete synthetic suite passes 164 tests, and all fixed scripts compile.
+No push, deployment, hosted plugin refresh or cross-device acceptance was done.
+
+## Bounded authorization candidate — 2026-11-15
+
+The local native authorization check stalled before any item request. Both the
+Python binding and a small native C control using Apple's SDK declarations
+stalled inside `AEDeterminePermissionToAutomateTarget` with prompting disabled.
+Bundle-ID and verified-process-ID addressing, and a worker with a main run loop,
+did not produce an authorization result within their diagnostic deadlines.
+App discovery found one fully launched standard Things instance; session metadata
+confirmed a logged-in, on-console session but did not establish screen-lock state.
+This does not establish the cause of the earlier item-event
+timeouts or project placement failure.
+
+The source now gives non-prompting authorization checks a five-second caller
+deadline in the same process. One outstanding daemon probe is permitted, without
+automatic retry or queuing behind a stall. Late grants are discarded; late
+denials still latch for their event type, preserving reads after a write denial.
+The binding also matches the SDK's two-byte-packed `AEDesc` layout.
+
+All 161 synthetic tests passed. In a separate read-only loopback instance,
+diagnostics returned `automation_check_timed_out` in 5.013 seconds without reading
+tasks. Health still responded in 0.001 seconds with writes disabled, and the
+exact QA-project request failed closed with 503 in 0.001 seconds. No native task
+read or mutation was attempted because authorization remained unknown. Native
+create/edit/move/replay/reconciliation acceptance is still untested. The existing
+private database/WAL backup hashes matched, and a reconstructed private copy
+passed integrity checks before diagnostics. No runtime or production journal
+was changed, and no branch was pushed.
+
+## Recovery candidate — 2026-11-14
+
+The 2.3.0 candidate adds exact-ID task moves and known-ID reconciliation through
+the existing separately authorized preview/apply/status workflow. The local
+synthetic suite passes 154 tests, including the real MCP/loopback HTTP boundary,
+old-journal migration, stale task/destination/context checks, replay, wrong
+destination, partial failure, atomic reconciliation failure, restart, and multiple
+unresolved records. Reconciliation preserves the original uncertain row and never
+calls the native writer. All three fixed AppleScripts compile against the
+installed Things dictionary, whose project property supports assignment.
+
+Task-free AppleScript/Foundation fixtures now exercise the production project
+snapshot and move branches, replacing application calls with synthetic records.
+They do not establish native Things placement. Exact-item reads timed out during
+separate native investigation, so live task mutation acceptance remains blocked.
+The original project-create placement implementation is unchanged; its documented
+syntax is not evidence of the failure's cause. This candidate has not been deployed.
+
+Before release, restore reliable native exact-item reads without permission
+resets or hidden retries, then use only an isolated test area/project and its
+known synthetic task IDs. Verify project create, project move, title/notes/both
+dates and preserved fields through exact preview/approval/apply/read-back. Exercise
+a deliberately uncertain synthetic record, verify the create block, perform a
+separately approved correction, and reconcile its exact known ID once. Confirm
+the original uncertain record survives and repeat apply cannot mutate again.
+Live recovery of an existing personal task is a separate owner-approved action.
+
 ## Deployment checkpoint — 2026-11-04
 
 Source commit `463569b` passed both GitHub Actions jobs:

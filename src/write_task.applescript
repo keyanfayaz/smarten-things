@@ -25,6 +25,7 @@ on run argv
     set changedID to missing value
     set outcomeName to "not_started"
     try
+        if clearDeadline then error "Deadline clearing unsupported"
         set currentZone to (current application's NSTimeZone's localTimeZone()'s |name|()) as text
         if currentZone is not ((expectedContext's objectForKey:"time_zone") as text) then error "Context changed"
         if newStart is not missing value then
@@ -34,28 +35,35 @@ on run argv
         with timeout of 60 seconds
             tell application "/Applications/Things3.app"
                 if version is not ((expectedContext's objectForKey:"app_version") as text) then error "Context changed"
-                if operationName is "update" then
+                if operationName is "update" or operationName is "move" then
                     set requestedID to (change's objectForKey:"task_id") as text
                     set taskRef to to do id requestedID
                     if class of taskRef is project then error "Project outside task scope"
                     if not (my matchesSnapshot(taskRef, expected's objectForKey:"item")) then error "Item changed"
                     set changedID to id of taskRef
+                    if operationName is "move" then
+                        set destinationRef to project id ((change's objectForKey:"project_id") as text)
+                        set expectedDestination to request's objectForKey:"destination"
+                        if not (my matchesSnapshot(destinationRef, expectedDestination's objectForKey:"item")) then error "Project changed"
+                        set attemptedChange to true
+                        set project of taskRef to destinationRef
+                    end if
                     if newTitle is not missing value then
                         set attemptedChange to true
                         set name of taskRef to (newTitle as text)
                     end if
                 else if operationName is "create" then
                     set destinationID to change's objectForKey:"project_id"
-                    if destinationID is missing value then
-                        set attemptedChange to true
-                        set taskRef to make new to do with properties {name:(newTitle as text)} at beginning of list id "TMInboxListSource"
-                    else
+                    if destinationID is not missing value then
                         set destinationRef to project id (destinationID as text)
                         if not (my matchesSnapshot(destinationRef, expected's objectForKey:"item")) then error "Project changed"
-                        set attemptedChange to true
-                        set taskRef to make new to do with properties {name:(newTitle as text)} at beginning of destinationRef
                     end if
+                    -- Native testing found make's project container ignored. Use
+                    -- the verified project assignment and retain identity if it fails.
+                    set attemptedChange to true
+                    set taskRef to make new to do with properties {name:(newTitle as text)} at beginning of list id "TMInboxListSource"
                     set changedID to id of taskRef
+                    if destinationID is not missing value then set project of taskRef to destinationRef
                 else
                     error "Unsupported operation"
                 end if
@@ -69,11 +77,7 @@ on run argv
                 end if
                 if hasDeadline then
                     set attemptedChange to true
-                    if clearDeadline then
-                        set due date of taskRef to missing value
-                    else
-                        set due date of taskRef to deadlineDay
-                    end if
+                    set due date of taskRef to deadlineDay
                 end if
                 set outcomeName to "applied"
             end tell

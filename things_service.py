@@ -27,6 +27,7 @@ PERMISSION_REASONS = {
     "granted": "ready", "consent_required": "automation_consent_required",
     "denied": "automation_denied", "app_not_running": "app_not_running",
     "unsupported": "automation_unsupported", "unavailable": "automation_unavailable",
+    "timed_out": "automation_check_timed_out",
 }
 READ_FAILURE_REASONS = {
     "Apple Events access denied (-1742/-1743); stopped without retry or settings changes": "automation_denied",

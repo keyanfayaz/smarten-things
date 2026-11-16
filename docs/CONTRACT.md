@@ -4,9 +4,10 @@
 
 The default service and read credential read public native AppleScript properties
 of open Things items. A separately scoped, locally enabled capability adds only
-individual task creation and title, notes, start-day and deadline updates after preview/owner approval;
+individual task creation, title/notes/date updates, exact-ID task moves to an
+existing open project and known-ID uncertainty reconciliation after preview/owner approval;
 see [the complete write contract](PREVIEWS.md). No completion, cancellation,
-deletion, project move/creation, reorder, arbitrary script, live database SQL,
+deletion, moving/creating projects, reorder, arbitrary script, live database SQL,
 Things Cloud or cloud-credential API is exposed.
 `historical/scan.applescript` remains inactive. Linear is never accessed or modified
 by this service. A dashboard's existing read-only Linear source supplies records.
@@ -82,7 +83,11 @@ No tasks are replayed or cached on reconnect; clients must explicitly request ag
 
 Startup, HTTP/MCP calls and task reads never prompt for Automation consent. The
 service does not launch Things or repair permissions. A non-prompting public API
-checks access first. A denial latches for
+checks access first, on a daemon worker in the same service process. A non-prompting
+check has a five-second caller deadline. A stalled native call remains the only
+outstanding probe; subsequent requests fail closed without starting more probes
+or sending task events. A late grant is not reused, and a late denial still
+latches for its event type. A denial latches for
 that service process; restart only after user authorization. There are no read
 retries. Raw AppleScript diagnostics and tracebacks are suppressed. Health never
 reads tasks or establishes live access. The task-free doctor remains separate.

@@ -26,7 +26,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(overlay["interface"]["capabilities"], ["Read"])
         self.assertEqual(overlay["interface"]["displayName"], 'Smarten for Things')
         self.assertEqual(manifest['name'], 'things-readonly')
-        self.assertEqual(manifest['version'], '2.2.1')
+        self.assertEqual(manifest['version'], '2.3.0')
         self.assertNotIn("hooks", overlay)
         self.assertNotIn("onboardingSkill", overlay)
         self.assertNotIn("skills", manifest)

@@ -4,7 +4,7 @@ import json
 import re
 from urllib.parse import urlsplit
 
-from things_previews import ChangeError, normalize_change, valid_id
+from things_previews import ChangeError, normalize_write_change, valid_id
 from things_service import load_token
 
 
@@ -48,13 +48,13 @@ class ChangeClient:
             connection.close()
 
     def preview(self, change):
-        return self._request('POST', '/v1/change-previews', normalize_change(change))
+        return self._request('POST', '/v1/change-previews', normalize_write_change(change))
 
     def apply_request(self, arguments):
         if type(arguments) is not dict or set(arguments) != {'proposal_id', 'payload_digest', 'change'} or not valid_id(arguments['proposal_id']):
             raise ChangeError('invalid_apply_request')
         return self._request('POST', '/v1/change-previews/' + arguments['proposal_id'] + '/apply',
-                             {'payload_digest': arguments['payload_digest'], 'change': normalize_change(arguments['change'])})
+                             {'payload_digest': arguments['payload_digest'], 'change': normalize_write_change(arguments['change'])})
 
     def status(self, arguments):
         if type(arguments) is not dict or set(arguments) != {'proposal_id'} or not valid_id(arguments['proposal_id']):

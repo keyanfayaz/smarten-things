@@ -66,6 +66,15 @@ existing tunnel, then renamed and refreshed the same hosted plugin. See the
 [deployment checkpoint](VERIFICATION.md) for observed read/discovery evidence.
 Real notes/date mutations and cross-device acceptance remain pending. The
 exact-item schema upgrade requires coordinated service/client rollout; old
-previews must be regenerated. The system still does not support task
-completion/deletion, bulk changes, recurrence, checklists or project moves
-through its write tools.
+previews must be regenerated. At that deployment checkpoint the write tools did
+not support task moves, completion/deletion, bulk changes, recurrence or checklists.
+
+The 2.3.0 source candidate adds exact-ID task moves and separately approved
+known-ID reconciliation, preserving the original uncertain record. After the
+owner approved the pending macOS dialog, native acceptance reproduced the
+project-create placement failure and verified explicit project assignment as the
+fix. Create, edit, date setting, inter-project move, stale/replay rejection and
+reconciliation passed in isolated QA. Deadline removal failed native verification
+and is now rejected before mutation. This candidate has not been installed;
+production recovery and hosted client acceptance remain separate release gates.
+See [native evidence](VERIFICATION.md) and [scope](PREVIEWS.md).
